@@ -33,6 +33,8 @@ import statistics
 import sys
 from datetime import datetime, timezone
 
+SCHEMA = 2  # manifest layout written by capture.py
+
 # --- spec -------------------------------------------------------------------
 
 
@@ -181,6 +183,7 @@ class Spec:
         self.cls = compile_value(raw.get('class'))
         self.groups = {k: compile_cond(v) for k, v in (raw.get('groups') or {}).items()}
         self.actor = compile_value(raw.get('actor'))
+        self.day_shift = float(raw.get('day_start_hour', 0)) * 3600
         chain = raw.get('chain')
         self.chain = None
         if chain:
@@ -188,7 +191,10 @@ class Spec:
                 'key': compile_value(chain.get('key')) if chain.get('key') else (lambda row: ''),
                 'same': chain.get('same') or [],
                 'within': float(chain['within']),
-                'steps': [dict(s, _c=compile_cond(s['match'])) for s in chain['steps']],
+                'steps': [dict(s, _c=compile_cond(s['match']),
+                               **{'_' + k: {v: compile_binding(t) for v, t in (s.get(k) or {}).items()}
+                                  for k in ('bind', 'eq', 'ne')})
+                          for s in chain['steps']],
             }
 
     @classmethod
@@ -235,19 +241,24 @@ def open_capture(path):
 def step_ok(step, row, binds):
     if not step['_c'](row):
         return None
-    for var, path in (step.get('eq') or {}).items():
-        if var in binds and text(resolve(row, path)) != binds[var]:
+    for var, get in step['_eq'].items():
+        if var in binds and get(row) != binds[var]:
             return None
-    for var, path in (step.get('ne') or {}).items():
-        val = text(resolve(row, path))
+    for var, get in step['_ne'].items():
+        val = get(row)
         if any(v in binds and binds[v] == val for v in var.split(',')):
             return None
-    if not step.get('bind'):
+    if not step['_bind']:
         return binds
     new = dict(binds)
-    for var, path in step['bind'].items():
-        new[var] = text(resolve(row, path))
+    for var, get in step['_bind'].items():
+        new[var] = get(row)
     return new
+
+
+def compile_binding(spec):
+    """A bind / eq / ne target: a path string or a value spec with regex."""
+    return compile_value({'path': spec} if isinstance(spec, str) else spec)
 
 
 def chain_key(chain, row):
@@ -277,7 +288,7 @@ def scan(spec_raw, path, lo=None, hi=None):
         'outside_window': 0, 'order_breaks': 0, 'first': None, 'last': None,
         'days': {}, 'hours': [0] * 24, 'classes': {},
         'groups': {g: {'records': 0, 'hours': [0] * 24} for g in spec.groups},
-        'actors': {}, 'chains': [], 'step_hits': [], 'keys': [],
+        'actors': {}, 'last_step': {}, 'chains': [], 'step_hits': [], 'keys': [],
     }
     chain = spec.chain
     state, keys, last_chain_end = {}, set(), {}
@@ -302,7 +313,7 @@ def scan(spec_raw, path, lo=None, hi=None):
                 out['no_time'] += 1
                 continue
             try:
-                day = datetime.fromtimestamp(t, tz=timezone.utc).strftime('%Y-%m-%d')
+                day = datetime.fromtimestamp(t - spec.day_shift, tz=timezone.utc).strftime('%Y-%m-%d')
             except (OverflowError, OSError, ValueError):
                 out['no_time'] += 1
                 continue
@@ -338,6 +349,8 @@ def scan(spec_raw, path, lo=None, hi=None):
             for i, step in enumerate(steps):
                 if step['_c'](row):
                     out['step_hits'][i] += 1
+            if a is not None and steps[-1]['_c'](row):
+                out['last_step'].setdefault(a, []).append(t)
             # Partials {(idx, binds): (earliest t0, latest t0, actor)}: every path
             # at one step with one binding advances together, so the range of
             # first-step times is exact for existence (the latest decides expiry)
@@ -408,8 +421,10 @@ def full_days(res):
 def profile(results, top=40):
     total = sum(r['records'] for r in results)
     classes, groups, hours = {}, {}, [0] * 24
-    per_day = []
+    per_day, weekday = [], {}
     for r in results:
+        for day, n in sorted(r['days'].items())[1:-1]:
+            weekday.setdefault(datetime.strptime(day, '%Y-%m-%d').strftime('%a'), []).append(n)
         for c, n in r['classes'].items():
             classes[c] = classes.get(c, 0) + n
         for g, v in r['groups'].items():
@@ -431,6 +446,7 @@ def profile(results, top=40):
         'records': total,
         'per_day_utc': {'min': min(per_day), 'median': statistics.median(per_day),
                     'max': max(per_day)} if per_day else None,
+        'per_weekday_mean': {d: round(statistics.mean(v)) for d, v in weekday.items()},
         'class_count': len(classes), 'class_share_pct': shares,
         'hourly_pct_utc': curve(hours),
         'groups': {g: {'share_pct': round(100.0 * v['records'] / total, 2) if total else 0,
@@ -461,57 +477,72 @@ def chains_report(off, on):
     return rep
 
 
+def _count(times, lo, hi):
+    return sum(1 for x in times if lo <= x < hi)
+
+
 def episodes_report(on, off, interval_h, window_start, around=1800):
-    """Recurrence and the actor's activity around each episode."""
-    out = {'interval_hours': interval_h, 'captures': []}
-    base = {}
+    """Recurrence, and the actor's activity around each episode compared with
+    its activity around ordinary background records of the chain's last step
+    (the same kind of moment without the chain) and at the same clock time
+    on background days."""
+    out = {'interval_hours': interval_h, 'around_seconds': around, 'captures': []}
+    same_moment, same_clock = {}, {}
     for r in off:
+        for actor, lasts in r['last_step'].items():
+            times = r['actors'].get(actor, [])
+            for t in lasts:
+                same_moment.setdefault(actor, []).append(
+                    (_count(times, t - around, t), _count(times, t, t + around + 1e-9) - 1))
         for actor, times in r['actors'].items():
-            base.setdefault(actor, []).append((r, times))
-    ratios_before, ratios_after = [], []
+            same_clock.setdefault(actor, []).append((r, times))
+    ratios = {'before_vs_moment': [], 'after_vs_moment': [], 'before_vs_clock': []}
     for r in on:
         starts = sorted(r['chains'], key=lambda c: (c[0], c[1]))
         s_times = [c[0] for c in starts]
         gaps = [round((b - a) / 3600, 2) for a, b in zip(s_times, s_times[1:])]
         first = round((s_times[0] - window_start) / 3600, 2) if s_times else None
-        hours = [int(t // 3600 % 24) for t in s_times]
-        actors = [c[3] for c in starts]
-        keys = [c[2] for c in starts]
         neigh = []
         for t0, t1, _, actor in starts:
             if actor is None:
                 continue
             times = r['actors'].get(actor, [])
-            before = sum(1 for x in times if t0 - around <= x < t0)
-            after = sum(1 for x in times if t1 < x <= t1 + around)
-            sod = t0 % 86400
-            samples = []
-            for rr, btimes in base.get(actor, []):
-                day0 = (rr['first'] // 86400) * 86400
-                d = day0
+            before, after = _count(times, t0 - around, t0), _count(times, t1 + 1e-9, t1 + around)
+            moments = same_moment.get(actor, [])
+            clock = []
+            for rr, btimes in same_clock.get(actor, []):
+                d = (rr['first'] // 86400) * 86400
                 while d < rr['last']:
-                    lo = d + sod
-                    samples.append(sum(1 for x in btimes if lo - around <= x < lo))
+                    lo = d + t0 % 86400
+                    clock.append(_count(btimes, lo - around, lo))
                     d += 86400
-            mean = statistics.mean(samples) if samples else None
-            neigh.append({'start': iso(t0), 'actor': actor, 'before': before, 'after': after,
-                          'baseline_mean': None if mean is None else round(mean, 2),
-                          'baseline_max': max(samples) if samples else None})
-            if mean:
-                ratios_before.append(before / mean)
-                ratios_after.append(after / mean)
+            item = {'start': iso(t0), 'actor': actor, 'before': before, 'after': after}
+            if moments:
+                mb = statistics.mean(m[0] for m in moments)
+                ma = statistics.mean(m[1] for m in moments)
+                item.update({'moment_before_mean': round(mb, 2), 'moment_after_mean': round(ma, 2),
+                             'moments': len(moments)})
+                if mb:
+                    ratios['before_vs_moment'].append(before / mb)
+                if ma:
+                    ratios['after_vs_moment'].append(after / ma)
+            if clock:
+                cm = statistics.mean(clock)
+                item.update({'clock_before_mean': round(cm, 2), 'clock_before_range': [min(clock), max(clock)]})
+                if cm:
+                    ratios['before_vs_clock'].append(before / cm)
+            neigh.append(item)
         w = min(interval_h / 4.0, 6.0) if interval_h else None
         out['captures'].append({
             'path': r['path'], 'episodes': len(starts), 'first_start_hours': first,
             'gaps_hours': gaps, 'gap_tolerance_hours': None if w is None else round(w / 2, 2),
             'gaps_outside_tolerance': [g for g in gaps if w is not None and abs(g - interval_h) > w / 2],
-            'start_hours_utc': hours, 'distinct_actors': len(set(actors)),
-            'distinct_keys': len(set(keys)),
+            'start_hours_utc': [int(t // 3600 % 24) for t in s_times],
+            'distinct_actors': len({c[3] for c in starts}), 'distinct_keys': len({c[2] for c in starts}),
             'spans_seconds': sorted(round(c[1] - c[0]) for c in starts),
             'around': neigh,
         })
-    out['activity_ratio_before'] = round(statistics.mean(ratios_before), 2) if ratios_before else None
-    out['activity_ratio_after'] = round(statistics.mean(ratios_after), 2) if ratios_after else None
+    out['activity_ratios'] = {k: round(statistics.mean(v), 2) if v else None for k, v in ratios.items()}
     return out
 
 
@@ -530,21 +561,36 @@ def presence(off, on):
             'lowest_counts': [{'actor': a, 'min_records_per_capture': n} for n, a in lows]}
 
 
-def state_growth(run):
-    series = run.get('rss_mb') or []
-    if len(series) < 8:
+def _growth(run):
+    vals = [v for _, v in run.get('rss_mb') or []]
+    if len(vals) < 8:
         return None
-    vals = [v for _, v in series]
     q = len(vals) // 4
-    second, last = statistics.mean(vals[q:2 * q]), statistics.mean(vals[3 * q:])
+    return statistics.mean(vals[q:2 * q]), statistics.mean(vals[3 * q:])
+
+
+def state_growth(run, base=None):
+    """Memory growth of the long run between its second and last quarter,
+    minus the growth Eventum shows on the same inputs with a trivial template."""
+    g = _growth(run)
+    if g is None:
+        return None
+    second, last = g
+    b = _growth(base) if base else None
+    excess = (last - second) - ((b[1] - b[0]) if b else 0)
     return {'rss_second_quarter_mb': round(second), 'rss_last_quarter_mb': round(last),
-            'growth_pct': round(100.0 * (last - second) / second, 1) if second else None,
+            'baseline_growth_mb': round(b[1] - b[0]) if b else None,
+            'excess_growth_mb': round(excess),
+            'excess_growth_pct': round(100.0 * excess / second, 1) if second else None,
             'peak_mb': run.get('peak_mb')}
 
 
 def report(spec_path, manifest_path):
     with open(manifest_path, encoding='utf-8') as fh:
         man = json.load(fh)
+    if man.get('schema') != SCHEMA:
+        raise SystemExit('manifest schema %s, expected %s: rerun capture.py with the current scripts'
+                         % (man.get('schema'), SCHEMA))
     with open(spec_path, encoding='utf-8') as fh:
         spec_raw = json.load(fh)
     runs = {r['name']: r for r in man['runs']}
@@ -568,7 +614,7 @@ def report(spec_path, manifest_path):
         'missing': chk.get('missing'), 'extra': chk.get('extra'),
         'carrier_excluded': chk.get('carrier_excluded')}
     rep['4_5_profile'] = profile(long_ or off) if (long_ or off) else None
-    rep['6_state'] = state_growth(runs['long']) if 'long' in runs else None
+    rep['6_state'] = state_growth(runs['long'], runs.get('long-base')) if 'long' in runs else None
     live_path = os.path.join(os.path.dirname(manifest_path), 'live.json')
     if os.path.exists(live_path):
         with open(live_path, encoding='utf-8') as fh:
@@ -607,8 +653,9 @@ def flags(rep):
     if prof['order_breaks']:
         out.append('2: %d records out of time order' % prof['order_breaks'])
     st = rep.get('6_state')
-    if st and st['growth_pct'] is not None and st['growth_pct'] > 10:
-        out.append('6: memory grew %s%% between the second and last quarter of the long run' % st['growth_pct'])
+    if st and st['excess_growth_pct'] is not None and st['excess_growth_pct'] > 10 and st['excess_growth_mb'] > 50:
+        out.append('6: memory grew %s MB (%s%%) more than Eventum alone between the second and last '
+                   'quarter of the long run' % (st['excess_growth_mb'], st['excess_growth_pct']))
     live = rep.get('7_live')
     if isinstance(live, dict) and not live.get('ok'):
         out.append('7: live check failed')
@@ -688,7 +735,7 @@ def main():
     c.add_argument('--on', nargs='*', default=[])
     s = sub.add_parser('sample')
     s.add_argument('capture')
-    s.add_argument('--nth', type=int, default=1)
+    s.add_argument('--nth', type=int, help='default: the middle matching record')
     s.add_argument('--contains')
     d = sub.add_parser('digest')
     d.add_argument('generator')
@@ -720,18 +767,18 @@ def main():
         emit(rep)
         return 0 if rep['ok'] else 1
     if args.cmd == 'sample':
-        n = 0
         opener = gzip.open if args.capture.endswith('.gz') else open
-        with opener(args.capture, 'rb') as fh:
-            for line in fh:
-                if not line.strip():
-                    continue
-                if args.contains and args.contains.encode('utf-8') not in line:
-                    continue
-                n += 1
-                if n == args.nth:
-                    sys.stdout.buffer.write(line if line.endswith(b'\n') else line + b'\n')
-                    return 0
+
+        def matching():
+            with opener(args.capture, 'rb') as fh:
+                for line in fh:
+                    if line.strip() and (not args.contains or args.contains.encode('utf-8') in line):
+                        yield line
+        nth = args.nth or (sum(1 for _ in matching()) + 1) // 2  # default: the middle record
+        for n, line in enumerate(matching(), 1):
+            if n == nth:
+                sys.stdout.buffer.write(line if line.endswith(b'\n') else line + b'\n')
+                return 0
         return 1
     if args.cmd == 'digest':
         out = digest(args.generator, args.previous)

@@ -1,6 +1,6 @@
 # Source brief - structure
 
-`.content-design/<name>/brief.md`, with raw records saved under `.content-design/<name>/reference/` (one file per event class, exactly as published; `sample_event.json` of the integration when one exists). Every claim carries its source reference `[n]`.
+`.content-design/<name>/brief.md`, with raw records saved under `.content-design/<name>/reference/`: one file per event class, exactly as published; `sample_event.json` of the integration when one exists; when no record of the version is published, the source-code excerpts that define the format, with repository, tag and path. Every claim carries its source reference `[n]`.
 
 1. **Source** - vendor, product, component or stream; version; what the data is for (detections, dashboards, load); transport and encoding (syslog RFC 3164/5424, CEF, LEEF, JSON, Windows XML, plain text); how a record is framed; the output shape the generator will write (native line only, or ECS JSON with the native record in `event.original`).
 2. **Catalog check** - generators of the same `vendor:product:stream` in `generators/` of `github.com/eventum-generator/content-packs` and in its open pull requests (`gh pr list -R eventum-generator/content-packs --state open --search <product>`); aliases, rebrands and other encodings of the same stream count as the same source. For another stream of a product already in the catalog: the event IDs or channels each covers, and why a separate generator is useful.

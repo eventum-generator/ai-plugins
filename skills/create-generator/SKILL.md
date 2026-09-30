@@ -42,8 +42,10 @@ Write each decision down with the brief fact behind it.
   | Fixed-interval emitters: heartbeats, metrics, keepalives | `timer`, or `cron` with seconds |
   | Steady machine traffic without a daily cycle | `cron` with `count` records per tick |
 
-  An input's rate counts records, not actions: an action that writes k records takes k timestamps of its population. Every timestamp yields one record. A carrier is the one exception: when records fall at moments no input schedules (the steps of a job after its scheduled start), a fine-grained `cron` or `timer` input with its own tag supplies timestamps, and the template emits the due record or drops the timestamp; no population's volume is ever shaped by drops.
-- **Event mix** - every class with its share from the brief. A class that stands alone (an access line, a flow record, a metric snapshot) is picked per timestamp by weight. When one action writes several related records (a logon and its logoff; a job start, its per-item results and its finish), each population keeps its pending records in a queue in `shared`: a timestamp emits the earliest due record of its population, otherwise starts the population's next action. Records of one moment (a request and its log lines) take consecutive timestamps and stay adjacent. The timestamp is the event time.
+  An input's rate counts records, not actions: an action that writes k records takes k timestamps of its population. Every timestamp yields one record; a scheduled tick emits the first record of the action it starts (a job's start line).
+
+  A carrier is the one exception: when records fall at moments no input schedules (the steps of a job after its start), or when a population's own timestamps are sparser than the delays between an action's records (follow-ups of rare night sessions), an input with its own tag supplies timestamps, and the template emits the earliest due record or drops the timestamp. The record's event time is its due time, which lies inside the carrier's tick interval, never the whole-second tick itself. A carrier covers only the hours its records can fall in, at the coarsest resolution they need: a drop costs about four renders. No population's volume is ever shaped by drops.
+- **Event mix** - every class with its share from the brief. A class that stands alone (an access line, a flow record, a metric snapshot) is picked per timestamp by weight. When one action writes several related records (a logon and its logoff; a job start, its per-item results and its finish), each population keeps its pending records in a queue in `shared`: a timestamp emits the earliest due record of its population, otherwise starts the population's next action. Records of one moment (a request and its log lines) take consecutive timestamps and stay adjacent. The timestamp is the event time, except for records emitted on a carrier.
 - **Population** - actors (users, hosts, clients, services). Actors that act on demand have skewed activity weights bounded from below and above, so every actor appears regularly and none dominates, and are numerous enough that each one's own rate is realistic. Members that act on a schedule or an interval (hosts reporting metrics, machines in a backup job) all act every cycle; they vary in outcome and load.
 - **Background** - a normal period of the source, not an incident or an outage: failures a few percent of attempts with a monotone law (one failure more common than two), retries and give-ups; occasional bursts carried by a few actors; measurements within their usual range, counters monotone; every limit in the brief holds.
 - **Anomaly chain** - included by default when the source records activity a detection or alert rule targets and the brief has a chain candidate; the user may leave it out. Designed per `references/anomaly-chain.md`; without a chain, every chain item below is skipped.
@@ -58,12 +60,14 @@ Write each decision down with the brief fact behind it.
 ### 3. Validate
 
 ```bash
-python <scripts>/capture.py run <generator> --out .content-design/<name>/captures --set author [--carrier <tag>]
-python <scripts>/capture.py live <generator> --out .content-design/<name>/captures
+python <scripts>/capture.py run <generator> --out .content-design/<name>/captures --set author [--carrier <tag>] [--short-interval <hours>]
+python <scripts>/capture.py live <generator> --out .content-design/<name>/captures [--carrier <tag>]
 python <scripts>/measure.py report .content-design/<name>/measure.json .content-design/<name>/captures/manifest.json --save .content-design/<name>/report.json
 ```
 
-Every flag in the report is a defect to fix; the other numbers are judged in phase 4. After a fix, rerun the set: runs execute in parallel and are cheap next to a missed defect. Keep `report.json` and the captures until the README is written.
+- `--carrier` names every carrier tag; `--short-interval` is the shortest interval the parameter range admits (default 6), `0` when that is the default interval.
+- The live check shifts the day curve so that its busiest hour runs now and scales rates to about 40 records; a schedule is moved into the window.
+- `report` exits 1 while flags remain. Every flag is a defect to fix; the other numbers are judged in phase 4. After a fix, rerun the set: runs execute in parallel and are cheap next to a missed defect. Keep `report.json` and the captures until the README is written.
 
 ### 4. Self-check
 
@@ -71,7 +75,7 @@ Go through `../review-generator/references/acceptance.md` against the generator 
 
 ### 5. Document
 
-The README per `references/generator-rules.md`: every number from `report.json`, the sample record from `measure.py sample .content-design/<name>/captures/long.jsonl.gz`. Then delete the captures.
+The README per `references/generator-rules.md`: every number from `report.json`, the sample record from `measure.py sample .content-design/<name>/captures/long.jsonl.gz` (the middle record by default; `--contains` picks a class). Then delete the captures.
 
 ### 6. Hand over
 

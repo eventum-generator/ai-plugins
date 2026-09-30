@@ -96,7 +96,13 @@ class BoundTest(unittest.TestCase):
         day = next(iter(pats.values()))
         self.assertEqual(day['oscillator']['end'], 'never')
         self.assertEqual(day['multiplier']['ratio'], 1000)
-        self.assertEqual(cfg['input'][1]['cron']['count'], 30)
+        # A schedule is moved into the live window, not multiplied.
+        self.assertEqual(cfg['input'][1]['cron']['count'], 3)
+        self.assertEqual(cfg['input'][1]['cron']['expression'], capture.LIVE_CRON)
+        rate = config()
+        rate['input'][1]['cron']['expression'] = '* * * * * */10'
+        capture.bound(self.root, rate, patterns(self.root), W, 1, scale=10, live=True)
+        self.assertEqual(rate['input'][1]['cron']['count'], 30)
         self.assertEqual(cfg['input'][2]['timer']['count'], 20)
 
     def test_http_input_refused(self):

@@ -47,11 +47,16 @@ WINDOW_START = '2026-08-31T00:00:00+00:00'  # a Monday midnight UTC
 UNIT_SECONDS = {'weeks': 604800, 'days': 86400, 'hours': 3600, 'minutes': 60,
                 'seconds': 1, 'milliseconds': 0.001, 'microseconds': 1e-6}
 TS_TEMPLATE = '{"t": {{ timestamp.isoformat() | tojson }}, "g": {{ tags | list | tojson }}}'
+# The memory baseline drops carrier timestamps as the generator mostly does.
+BASE_TEMPLATE = ('{%- if tags | select("in", params._carrier) | list -%}{%- do dispatch.drop() -%}'
+                 '{%- else -%}{"t": {{ timestamp.isoformat() | tojson }}}{%- endif -%}')
 SETS = {
     'author': {'off': 2, 'on': 2},
     'review': {'off': 3, 'on': 3},
 }
 CHILD_ENV = dict(os.environ, NO_COLOR='1', TERM='dumb')
+SCHEMA = 2  # manifest layout read by measure.py
+LIVE_CRON = '* * * * * */20'  # schedules replaced in the live check: a run every 20 s
 
 
 class CaptureError(Exception):
@@ -193,7 +198,66 @@ def aligned_start(anchor, period_s, window):
     return a + timedelta(seconds=k * period_s)
 
 
-def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False):
+def spread_pdf(dist, prm, x):
+    """Density of a uniform or triangular spreader at fraction x of the period."""
+    if dist == 'uniform':
+        low, high = float(prm.get('low', 0)), float(prm.get('high', 1))
+        return 1.0 / (high - low) if low <= x < high else 0.0
+    left, mode, right = float(prm['left']), float(prm['mode']), float(prm['right'])
+    if not left <= x <= right or right <= left:
+        return 0.0
+    if x < mode:
+        return 2 * (x - left) / ((right - left) * (mode - left))
+    return 2 * (right - x) / ((right - left) * (right - mode)) if right > mode else 0.0
+
+
+def busiest_hour(patterns):
+    """(UTC hour of the week with the most timestamps, timestamps per hour then)
+    across uniform and triangular daily and weekly patterns, or (None, 0)."""
+    density = [0.0] * 168
+    for pat in patterns.values():
+        osc, spread = pat.get('oscillator') or {}, pat.get('spreader') or {}
+        a = parse_iso(osc.get('start'))
+        period_h = float(osc.get('period', 1)) * UNIT_SECONDS.get(osc.get('unit', 'days'), 0) / 3600
+        dist = spread.get('distribution', 'uniform')
+        if a is None or period_h not in (24, 168) or dist not in ('uniform', 'triangular'):
+            continue
+        prm = spread.get('parameters') or {}
+        au = a.astimezone(timezone.utc)
+        anchor_how = au.weekday() * 24 + au.hour + au.minute / 60.0
+        for h in range(168):
+            x = ((h + 0.5 - anchor_how) % period_h) / period_h  # fraction of the period
+            density[h] += pat['multiplier']['ratio'] * spread_pdf(dist, prm, x) / period_h
+    peak = max(range(168), key=lambda h: density[h])
+    if density[peak] - min(density) <= 1e-9:
+        return None, density[peak]
+    return peak, density[peak]
+
+
+def live_plan(gen_dir, cfg, patterns, window, seconds, carrier=(), target=40):
+    """Shift putting the busiest hour at `window` and the rate scale that gives
+    about `target` non-carrier records in `seconds`; notes."""
+    own = {}
+    for item in cfg.get('input') or []:
+        (plugin, conf), = item.items()
+        conf = conf or {}
+        if plugin == 'time_patterns' and not set(conf.get('tags') or ()) & set(carrier):
+            for rel in conf.get('patterns') or []:
+                path = (gen_dir / rel).resolve()
+                own[path] = patterns[path]
+    peak, per_hour = busiest_hour(own)
+    notes, shift = [], None
+    if peak is not None:
+        w = window.astimezone(timezone.utc)
+        shift = timedelta(hours=w.weekday() * 24 + w.hour - peak)
+        notes.append('curves shifted so that the busiest hour (weekday %d, %02d:00 UTC) runs now'
+                     % (peak // 24, peak % 24))
+    expected = per_hour / 3600.0 * seconds
+    scale = min(1000, max(20, math.ceil(target / expected))) if expected > 0 else 20
+    return shift, scale, notes
+
+
+def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False, shift=None):
     """Bound every input of a loaded config in place; notes of what changed.
 
     `patterns` maps pattern paths (resolved) to their loaded content and is
@@ -218,6 +282,8 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False):
                     period = float(osc.get('period', 1)) * UNIT_SECONDS[osc.get('unit', 'days')]
                     osc['start'] = iso(aligned_start(osc['start'], period, window))
                     osc['end'] = iso(end)
+                elif shift is not None and parse_iso(osc['start']) is not None:
+                    osc['start'] = iso(parse_iso(osc['start']) + shift)
                 if scale != 1:
                     pat['multiplier']['ratio'] = max(1, int(round(pat['multiplier']['ratio'] * scale)))
         elif plugin == 'cron':
@@ -227,7 +293,10 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False):
                         raise CaptureError('cron input: %s must be set explicitly' % key)
                 conf['start'] = iso(window)
                 conf['end'] = iso(end - timedelta(seconds=1))
-            if scale != 1:
+            elif not every_minute(conf['expression']):
+                notes.append('schedule %s replaced by %s for the live check' % (conf['expression'], LIVE_CRON))
+                conf['expression'] = LIVE_CRON
+            elif scale != 1:
                 conf['count'] = max(1, int(round(conf['count'] * scale)))
         elif plugin == 'linspace':
             a, b = parse_iso(conf.get('start')), parse_iso(conf.get('end'))
@@ -251,6 +320,12 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False):
         else:
             raise CaptureError('%s input cannot be bounded for a capture' % plugin)
     return notes
+
+
+def every_minute(expression):
+    """True when a cron expression fires at least once a minute (a rate, not a schedule)."""
+    fields = expression.split()
+    return len(fields) >= 5 and all(f == '*' for f in fields[:5])
 
 
 def set_mode(cfg, mode, interval):
@@ -281,7 +356,8 @@ def file_output(cfg, path):
                                'separator': '\n', 'formatter': fmt}}]
 
 
-def prepare(src, dst, py, window, days, mode='as-is', interval=None, scale=1, live=False):
+def prepare(src, dst, py, window, days, mode='as-is', interval=None, scale=1, live=False,
+            seconds=90, carrier=()):
     """Copy the generator to dst and bound it; (generator.yml path, config, notes)."""
     src = Path(src).resolve()
     if dst.exists():
@@ -299,7 +375,12 @@ def prepare(src, dst, py, window, days, mode='as-is', interval=None, scale=1, li
                     raise CaptureError('pattern %s lies outside the generator directory' % rel)
                 pat_paths.append(path)
     patterns = load_yaml(py, pat_paths) if pat_paths else {}
-    notes = bound(dst, cfg, patterns, window, days, scale, live)
+    shift, plan_notes = None, []
+    if live:
+        shift, auto, plan_notes = live_plan(dst, cfg, patterns, window, seconds, carrier)
+        scale = auto if scale is None else scale
+        plan_notes.append('rates scaled x%s' % scale)
+    notes = plan_notes + bound(dst, cfg, patterns, window, days, scale, live, shift)
     set_mode(cfg, mode, interval)
     file_output(cfg, dst / 'output' / 'events.out')
     for path, pat in patterns.items():
@@ -340,10 +421,10 @@ def execute(eventum, cfg_path, run_id, out_dir, mem, timeout, live=False, second
     return res
 
 
-def ts_template_config(cfg, dst):
+def ts_template_config(cfg, dst, template=TS_TEMPLATE):
     """Replace the templates by one that writes each timestamp and its tags."""
     (dst / 'templates').mkdir(exist_ok=True)
-    (dst / 'templates' / '_ts.json.jinja').write_text(TS_TEMPLATE, encoding='utf-8')
+    (dst / 'templates' / '_ts.json.jinja').write_text(template, encoding='utf-8')
     tpl = cfg['event']['template']
     tpl['mode'] = 'all'
     tpl['templates'] = [{'ts': {'template': 'templates/_ts.json.jinja'}}]
@@ -372,7 +453,7 @@ def count_lines(path):
 
 
 def one(args, name, kind, mode, interval, days, eventum, py, window, carrier=()):
-    out = Path(args.out)
+    out = Path(args.out).resolve()
     work = out / 'work' / name
     rec = {'name': name, 'kind': kind, 'mode': mode, 'interval': interval, 'days': days,
            'window_start': iso(window), 'window_end': iso(window + timedelta(days=days))}
@@ -381,6 +462,10 @@ def one(args, name, kind, mode, interval, days, eventum, py, window, carrier=())
         rec['notes'] = notes
         if kind == 'check':
             return check_pair(args, rec, cfg_path, cfg, work, eventum, py, window, days, mode, interval, carrier)
+        if kind == 'base':  # same inputs, trivial template: Eventum's own memory curve
+            ts_template_config(cfg, work, BASE_TEMPLATE)
+            cfg['event']['template'].setdefault('params', {})['_carrier'] = list(carrier)
+            dump(cfg_path, cfg)
         rec.update(execute(eventum, cfg_path, name, out, args.mem, args.timeout))
         produced = work / 'output' / 'events.out'
         rec['lines'] = 0
@@ -400,7 +485,7 @@ def one(args, name, kind, mode, interval, days, eventum, py, window, carrier=())
 
 def check_pair(args, rec, cfg_path, cfg, work, eventum, py, window, days, mode, interval, carrier):
     """Exact one-record-per-timestamp check: timestamps, then replay."""
-    out = Path(args.out)
+    out = Path(args.out).resolve()
     ts_template_config(cfg, work)
     dump(cfg_path, cfg)
     res = execute(eventum, cfg_path, rec['name'] + '-ts', out, args.mem, args.timeout)
@@ -444,8 +529,10 @@ def plan(args, has_chain):
     if has_chain:
         for i in range(counts['on']):
             runs.append(('on-%d' % (i + 1), 'on', 'on', None, args.days))
-        runs.append(('short', 'short', 'on', args.short_interval, args.days))
+        if args.short_interval:
+            runs.append(('short', 'short', 'on', args.short_interval, args.days))
     runs.append(('long', 'long', 'as-is', None, args.long_days))
+    runs.append(('long-base', 'base', 'as-is', None, args.long_days))
     runs.append(('check', 'check', 'on' if has_chain else 'as-is', None, args.check_days))
     return runs
 
@@ -460,9 +547,13 @@ def window_start(value):
 def run_problems(results):
     problems = []
     for r in results:
-        bad = (r.get('exit') != 0 or r.get('log_lines')
+        empty = r.get('kind') in ('off', 'on', 'short', 'long', 'custom') and not r.get('lines')
+        bad = (r.get('exit') != 0 or r.get('log_lines') or empty
                or r.get('ts_exit') not in (None, 0) or r.get('ts_log_lines'))
         if not bad:
+            continue
+        if empty and r.get('exit') == 0:
+            problems.append('%s: no records in the window' % r['name'])
             continue
         hint = {'memory': ': memory above 1.5 x --mem, rerun with a larger --mem',
                 'timeout': ': exceeded --timeout', 'no-slot': ': no slot',
@@ -486,7 +577,7 @@ def cmd_run(args):
     if ver < MIN_VERSION:
         raise CaptureError('Eventum %s is older than 2.8.0' % '.'.join(map(str, ver)))
     py = eventum_python(eventum)
-    out = Path(args.out)
+    out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     window = window_start(args.start)
     gen = Path(args.generator).resolve()
@@ -504,7 +595,7 @@ def cmd_run(args):
         cleanup_work(out)
     problems = run_problems(results)
     manifest = {
-        'generator': str(gen), 'eventum': '.'.join(map(str, ver)),
+        'schema': SCHEMA, 'generator': str(gen), 'eventum': '.'.join(map(str, ver)),
         'window_start': iso(window), 'has_chain': has_chain,
         'default_interval_hours': params.get('anomaly_interval_hours'),
         'set': args.set, 'wall_s': round(time.time() - started, 1),
@@ -544,14 +635,15 @@ def cmd_live(args):
     """Live run at scaled rates; follows the output while it grows."""
     eventum = find_eventum(args.eventum)
     py = eventum_python(eventum)
-    out = Path(args.out)
+    out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     work = out / 'work' / 'live'
     slot.cancel_on_signals()
     now = datetime.now(timezone.utc)
     try:
         cfg_path, _, notes = prepare(args.generator, work, py, now, 1, 'as-is', None,
-                                     scale=args.scale, live=True)
+                                     scale=args.scale, live=True, seconds=args.seconds,
+                                     carrier=args.carrier)
         produced = work / 'output' / 'events.out'
         samples, stop = [], threading.Event()
 
@@ -599,7 +691,7 @@ def cmd_live(args):
     counts = [per_sec[k] for k in sorted(per_sec)]
     median = sorted(counts)[len(counts) // 2] if counts else 0
     report = {
-        'seconds': args.seconds, 'scale': args.scale, 'records': len(samples),
+        'seconds': args.seconds, 'records': len(samples),
         'records_with_time': len(lags), 'order_breaks': order_breaks,
         'lag_s': {'min': round(min(lags), 2), 'max': round(max(lags), 2),
                   'median': round(sorted(lags)[len(lags) // 2], 2)} if lags else None,
@@ -614,11 +706,13 @@ def cmd_live(args):
         report['problems'].append('records out of order')
     if report['future_records']:
         report['problems'].append('records ahead of the wall clock')
-    if counts and counts[0] > max(10, 3 * median):
-        report['problems'].append('burst in the first second')
-    if not lags:
-        report['problems'].append('no record with a readable %s: nothing measured (native output: '
-                                  'pass --ts-path; a schedule may have no run in the window)' % args.ts_path)
+    late = sum(1 for x in lags if x > 5.0)
+    report['late_records'] = late
+    if late:
+        report['problems'].append('%d records more than 5 s behind the wall clock (catch-up)' % late)
+    if len(lags) < 30:
+        report['problems'].append('%d records with a readable %s: too few to judge (raise --scale or '
+                                  '--seconds; native output: pass --ts-path)' % (len(lags), args.ts_path))
     report['ok'] = not report['problems']
     dump(out / 'live.json', report)
     print(json.dumps(report, indent=1))
@@ -642,7 +736,8 @@ def main():
     r.add_argument('--days', type=int, default=4)
     r.add_argument('--long-days', type=int, default=14)
     r.add_argument('--check-days', type=int, default=2)
-    r.add_argument('--short-interval', type=float, default=6)
+    r.add_argument('--short-interval', type=float, default=6,
+                   help='hours; the shortest interval the design admits, 0 to skip the run')
     r.add_argument('--carrier', action='append', default=[], help='tag of a carrier input')
     o = sub.add_parser('one', parents=[common], help='one bounded run')
     o.add_argument('--name', required=True)
@@ -651,7 +746,8 @@ def main():
     o.add_argument('--interval', type=float)
     lv = sub.add_parser('live', parents=[common], help='live-mode check')
     lv.add_argument('--seconds', type=float, default=90)
-    lv.add_argument('--scale', type=float, default=20)
+    lv.add_argument('--scale', type=float, help='rate multiplier (default: enough for about 40 records)')
+    lv.add_argument('--carrier', action='append', default=[], help='tag of a carrier input')
     lv.add_argument('--ts-path', default='@timestamp')
     args = ap.parse_args()
     try:

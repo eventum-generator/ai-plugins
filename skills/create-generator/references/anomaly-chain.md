@@ -12,7 +12,9 @@ The actors of an episode are every entity it uses: accounts, source addresses, h
 
 ## Presence in background
 
-Every step, and every actor and actor pair an episode can use, also occurs in ordinary background, and the actor is active at the hours episodes start. Only the complete ordered sequence is absent from background. Size it so that each such element's expected count in a 4-day background capture is at least 10: absence in one capture then has probability below 1e-4, so presence holds in every capture and in users' data, not only on a lucky run.
+Every step (by any actor), every actor and every actor pair an episode can use (in any record) also occurs in ordinary background, and the actor is active at the hours episodes start; combinations of a step with a particular actor need not. Only the complete ordered sequence is absent from background. Aim for an expected count of at least 10 per element in a 4-day background capture, and never below 5: absence in one capture then has probability below 1e-4 (below 1% at 5), so presence holds in every capture and in users' data, not only on a lucky run. Where the source's cadence cannot reach that (one run per client per night), episode actors are drawn from the busier part of the population.
+
+Episodes of one key are separated by more than the chain window; within an episode the final step may repeat (every further download after the first), and measurement counts it as one chain.
 
 ## Recurrence
 
