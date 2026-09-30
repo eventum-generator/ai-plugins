@@ -52,11 +52,33 @@ class BoundTest(unittest.TestCase):
         self.assertEqual(cron['end'], (end - timedelta(seconds=1)).isoformat())
         timer = cfg['input'][2]['timer']
         self.assertEqual(timer['repeat'], 4 * 86400 // 900)
+        # The first tick comes `seconds` after start: it lands on the window start.
+        self.assertEqual(timer['start'], (W - timedelta(seconds=900)).isoformat())
 
     def test_phase_kept_for_offset_anchor(self):
         start = capture.aligned_start('2026-01-01T00:00:00+03:00', 86400, W)
-        self.assertGreaterEqual(start, W)
+        self.assertLessEqual(start, W)
+        self.assertLess((W - start).total_seconds(), 86400)
         self.assertEqual((start - datetime.fromisoformat('2026-01-01T00:00:00+03:00')).total_seconds() % 86400, 0)
+
+    def test_weekly_anchor_not_monday_covers_window(self):
+        start = capture.aligned_start('2026-01-03T00:00:00+00:00', 7 * 86400, W)  # a Saturday
+        self.assertLessEqual(start, W)
+        self.assertLess((W - start).total_seconds(), 7 * 86400)
+
+    def test_linspace_keeps_its_span(self):
+        cfg, pats = config(), patterns(self.root)
+        cfg['input'].append({'linspace': {'start': '2026-01-01T10:00:00Z', 'end': '2026-01-01T11:00:00Z', 'count': 60}})
+        capture.bound(self.root, cfg, pats, W, 4)
+        lin = cfg['input'][3]['linspace']
+        self.assertEqual(lin['start'], W.isoformat())
+        self.assertEqual(lin['end'], (W + timedelta(hours=1)).isoformat())
+
+    def test_parse_iso_variants(self):
+        for value in ('2026-08-31T00:00:00Z', '2026-08-31T00:00:00+0000',
+                      '2026-08-31T00:00:00.123456789+00:00', '2026-08-31 00:00:00,5+00:00'):
+            self.assertIsNotNone(capture.parse_iso(value), value)
+        self.assertIsNone(capture.parse_iso('2026-08-31T00:00:00'))
 
     def test_missing_key_named(self):
         cfg, pats = config(), patterns(self.root)

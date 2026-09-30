@@ -93,6 +93,22 @@ class SlotTest(unittest.TestCase):
         self.assertEqual(res['exit'], 137)
         self.assertEqual(res['reason'], 'memory')
 
+    def test_cancel_stops_command(self):
+        import threading as _th
+        _th.Timer(1.0, slot.CANCEL.set).start()
+        try:
+            res = slot.run([sys.executable, '-c', 'import time; time.sleep(30)'], mem_mb=64)
+        finally:
+            slot.CANCEL.clear()
+        self.assertEqual((res['exit'], res['reason']), (130, 'cancelled'))
+        self.assertLess(res['wall_s'], 10)
+
+    def test_killed_by_signal_code(self):
+        if os.name == 'nt':
+            self.skipTest('POSIX signals')
+        res = slot.run([sys.executable, '-c', 'import os, signal; os.kill(os.getpid(), signal.SIGKILL)'])
+        self.assertEqual(res['exit'], 137)
+
     def test_exit_code_passes_through(self):
         res = slot.run([sys.executable, '-c', 'raise SystemExit(3)'], mem_mb=64)
         self.assertEqual(res['exit'], 3)

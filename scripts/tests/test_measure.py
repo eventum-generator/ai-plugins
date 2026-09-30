@@ -78,6 +78,36 @@ class ChainTest(unittest.TestCase):
                 ev(T0 + 800, 'login', risk=90)]
         self.assertEqual(len(self.scan(rows)['chains']), 1)
 
+    def test_repeated_last_step_is_one_episode(self):
+        rows = [ev(T0, 'fail'), ev(T0 + 1, 'fail'), ev(T0 + 2, 'login', risk=90),
+                ev(T0 + 3, 'login', risk=90), ev(T0 + 4, 'login', risk=90)]
+        self.assertEqual(len(self.scan(rows)['chains']), 1)
+
+    def test_many_first_steps_stay_linear(self):
+        import time as _t
+        rows = [ev(T0 + i * 0.5, 'fail') for i in range(20000)]
+        began = _t.monotonic()
+        res = self.scan(rows)
+        self.assertLess(_t.monotonic() - began, 10)
+        self.assertEqual(res['chains'], [])
+
+    def test_window_clip_and_bool_values(self):
+        spec = {'class': {'path': 'event.action'},
+                'groups': {'ok': {'path': 'event.ok', 'values': [True]}}}
+        rows = [ev(T0 - 10, 'x', ok=True), ev(T0, 'x', ok=True), ev(T0 + 5, 'x', ok=False)]
+        res = measure.scan(spec, write(self.dir / 'w.jsonl', rows), T0, T0 + 86400)
+        self.assertEqual(res['outside_window'], 1)
+        self.assertEqual(res['groups']['ok']['records'], 1)
+
+    def test_identical_steps_need_distinct_records(self):
+        spec = {'chain': {'key': {'path': 'user.name'}, 'within': 3600,
+                          'steps': [{'match': {'path': 'event.action', 'values': ['q']}}] * 4}}
+        for n, expected in ((3, 0), (4, 1), (7, 1)):
+            rows = [ev(T0 + i * 60, 'q') for i in range(n)]
+            self.assertEqual(len(self.scan(rows, spec)['chains']), expected, n)
+        rows = [ev(T0, 'q'), ev(T0 + 3000, 'q'), ev(T0 + 3500, 'q'), ev(T0 + 4000, 'q'), ev(T0 + 4100, 'q')]
+        self.assertEqual(len(self.scan(rows, spec)['chains']), 1)  # the run from 3000 completes at 4100
+
     def test_accept_report(self):
         off = self.scan([ev(T0, 'fail'), ev(T0 + 2, 'login', risk=90)])
         on = measure.scan(CHAIN, write(self.dir / 'on.jsonl', [
@@ -105,7 +135,19 @@ class ParseProfileTest(unittest.TestCase):
         self.assertEqual(res['unparsed'], 1)
         prof = measure.profile([res])
         self.assertEqual(prof['class_share_pct'], {'Accepted': 50.0, 'Failed': 50.0})
-        self.assertEqual(prof['hourly_pct'][0], 50.0)
+        self.assertEqual(prof['hourly_pct_utc'][0], 50.0)
+
+    def test_time_formats(self):
+        self.assertEqual(measure.parse_time('2026-08-31T00:00:00+0000'), T0)
+        self.assertEqual(measure.parse_time(str(T0 * 1000000)), T0)
+        self.assertEqual(measure.parse_time(str(T0 * 1000000000)), T0)
+        self.assertAlmostEqual(measure.parse_time('2026-08-31T00:00:00.123456789Z'), T0 + 0.123456)
+
+    def test_lone_cr_is_not_a_record_break(self):
+        spec = {'parse': {'regex': r'^(?P<ts>\S+) (?P<msg>.*)$'}, 'timestamp': {'path': 'ts'}}
+        path = self.dir / 'cr.log'
+        path.write_bytes(('%s a\rb\n%s c\n' % (iso(T0), iso(T0 + 1))).encode())
+        self.assertEqual(measure.scan(spec, str(path))['records'], 2)
 
     def test_syslog_time_without_year(self):
         spec = {'parse': {'regex': r'^(?P<ts>\w{3} [ \d]\d \d\d:\d\d:\d\d) (?P<rest>.*)$'},

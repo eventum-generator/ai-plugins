@@ -11,14 +11,15 @@
         One bounded run.
     capture.py live GENERATOR --out DIR [--seconds 90] [--scale 20]
         Live mode at scaled rates: lag behind the wall clock, order,
-        bursts, log.
+        bursts, log. Writes DIR/live.json.
 
 The shipped generator is never modified: every run works on a copy in
-which every input is bounded to the window (time_patterns pattern files,
-cron, linspace: start and end; timer: start and repeat), the anomaly
-parameters are set, and the output is one local file. YAML is read with
-the Python of the Eventum installation; copies are written as JSON,
-which is valid YAML. Captures are gzipped JSON lines or native lines.
+which every input is bounded to the window (time_patterns pattern files
+and cron: start and end; linspace: shifted into the window; timer:
+start and repeat), the anomaly parameters are set, and the output is
+one local file. YAML is read with the Python of the Eventum
+installation ($EVENTUM_PYTHON overrides); copies are written as JSON,
+which is valid YAML. SIGINT, SIGTERM and SIGHUP stop every run.
 
 Standard library only; Python 3.9+.
 """
@@ -47,13 +48,37 @@ UNIT_SECONDS = {'weeks': 604800, 'days': 86400, 'hours': 3600, 'minutes': 60,
                 'seconds': 1, 'milliseconds': 0.001, 'microseconds': 1e-6}
 TS_TEMPLATE = '{"t": {{ timestamp.isoformat() | tojson }}, "g": {{ tags | list | tojson }}}'
 SETS = {
-    'author': {'off': 2, 'on': 2, 'short': 1, 'long': 1, 'check': 1},
-    'review': {'off': 3, 'on': 3, 'short': 1, 'long': 1, 'check': 1},
+    'author': {'off': 2, 'on': 2},
+    'review': {'off': 3, 'on': 3},
 }
+CHILD_ENV = dict(os.environ, NO_COLOR='1', TERM='dumb')
 
 
 class CaptureError(Exception):
     pass
+
+
+# --- time ------------------------------------------------------------------
+
+def parse_iso(value):
+    """Aware datetime from ISO 8601 (Z, +HHMM, comma or long fractions), or None."""
+    if not isinstance(value, str):
+        return None
+    s = value.strip().replace(',', '.')
+    if 'T' not in s and ' ' in s:
+        s = s.replace(' ', 'T', 1)
+    s = re.sub(r'[Zz]$', '+00:00', s)
+    s = re.sub(r'([+-]\d\d)(\d\d)$', r'\1:\2', s)
+    s = re.sub(r'\.(\d{1,6})\d*', lambda m: '.' + m.group(1).ljust(6, '0'), s)
+    try:
+        d = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    return d if d.tzinfo else None
+
+
+def iso(d):
+    return d.isoformat()
 
 
 # --- environment -----------------------------------------------------------
@@ -65,28 +90,41 @@ def find_eventum(explicit=None):
     return cand
 
 
+def _has_yaml(py):
+    return subprocess.run([py, '-c', 'import yaml'], capture_output=True).returncode == 0
+
+
 def eventum_python(eventum):
     """The interpreter of the Eventum installation (it has PyYAML)."""
+    env = os.environ.get('EVENTUM_PYTHON')
+    if env:
+        return env
     real = Path(os.path.realpath(eventum))
+    cands = []
     try:
         first = real.read_bytes()[:512].split(b'\n', 1)[0]
     except OSError:
         first = b''
-    cands = []
     if first.startswith(b'#!'):
         cands.append(first[2:].decode('utf-8', 'replace').strip().split()[0])
     for name in ('python', 'python3', 'python.exe'):
         cands.append(str(real.parent / name))
+    uv = shutil.which('uv')
+    if uv:
+        out = subprocess.run([uv, 'tool', 'dir'], capture_output=True, text=True)
+        if out.returncode == 0 and out.stdout.strip():
+            tool = Path(out.stdout.strip()) / 'eventum-generator'
+            cands += [str(tool / 'bin' / 'python'), str(tool / 'Scripts' / 'python.exe')]
+    pipx = Path.home() / '.local' / 'pipx' / 'venvs' / 'eventum-generator'
+    cands += [str(pipx / 'bin' / 'python'), str(pipx / 'Scripts' / 'python.exe')]
     for cand in cands:
-        if cand and os.path.exists(cand):
-            ok = subprocess.run([cand, '-c', 'import yaml'], capture_output=True)
-            if ok.returncode == 0:
-                return cand
-    raise CaptureError('no Python with PyYAML next to %s' % eventum)
+        if cand and os.path.exists(cand) and _has_yaml(cand):
+            return cand
+    raise CaptureError('no Python with PyYAML for %s: set EVENTUM_PYTHON' % eventum)
 
 
 def eventum_version(eventum):
-    out = subprocess.run([eventum, '--version'], capture_output=True, text=True)
+    out = subprocess.run([eventum, '--version'], capture_output=True, text=True, env=CHILD_ENV)
     m = re.search(r'App version:\s*(\d+)\.(\d+)\.(\d+)', out.stdout + out.stderr)
     if not m:
         raise CaptureError('cannot read the version of %s' % eventum)
@@ -94,14 +132,15 @@ def eventum_version(eventum):
 
 
 def doctor(eventum=None):
-    report = {'python': sys.version.split()[0], 'ok': True, 'problems': []}
+    report = {'python': sys.version.split()[0], 'problems': []}
     try:
         ev = find_eventum(eventum)
         report['eventum'] = ev
         ver = eventum_version(ev)
         report['eventum_version'] = '.'.join(map(str, ver))
         if ver < MIN_VERSION:
-            report['problems'].append('Eventum %s < 2.8.0: upgrade with `uv tool upgrade eventum-generator`' % report['eventum_version'])
+            report['problems'].append('Eventum %s < 2.8.0: `uv tool upgrade eventum-generator`'
+                                      % report['eventum_version'])
         report['eventum_python'] = eventum_python(ev)
     except CaptureError as exc:
         report['problems'].append(str(exc))
@@ -134,7 +173,8 @@ def load_yaml(py, paths):
     res = subprocess.run([py, '-c', _LOADER] + [str(p) for p in paths],
                          capture_output=True, text=True)
     if res.returncode:
-        raise CaptureError('YAML load failed: ' + res.stderr.strip().splitlines()[-1])
+        lines = res.stderr.strip().splitlines()
+        raise CaptureError('YAML load failed: ' + (lines[-1] if lines else 'exit %d' % res.returncode))
     return {Path(k): v for k, v in json.loads(res.stdout).items()}
 
 
@@ -144,41 +184,13 @@ def dump(path, obj):
 
 # --- bounding --------------------------------------------------------------
 
-def parse_dt(value):
-    if isinstance(value, str):
-        s = value.strip()
-        if s.endswith('Z'):
-            s = s[:-1] + '+00:00'
-        try:
-            d = datetime.fromisoformat(s.replace(' ', 'T', 1) if 'T' not in s else s)
-        except ValueError:
-            return None
-        return d if d.tzinfo else None
-    return None
-
-
 def aligned_start(anchor, period_s, window):
-    """First phase point of the oscillator at or after the window start."""
-    a = parse_dt(anchor)
+    """Last phase point of the oscillator at or before the window start."""
+    a = parse_iso(anchor)
     if a is None or period_s <= 0:
         return window
-    k = math.ceil((window - a).total_seconds() / period_s)
+    k = math.floor((window - a).total_seconds() / period_s)
     return a + timedelta(seconds=k * period_s)
-
-
-def resolve(obj, path):
-    """Value at a dotted path; a literal key with dots is tried first."""
-    if isinstance(obj, dict) and path in obj:
-        return obj[path]
-    for part in path.split('.'):
-        if not isinstance(obj, dict) or part not in obj:
-            return None
-        obj = obj[part]
-    return obj
-
-
-def iso(d):
-    return d.isoformat()
 
 
 def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False):
@@ -186,6 +198,8 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False):
 
     `patterns` maps pattern paths (resolved) to their loaded content and is
     modified in place. With live=True inputs keep their own start and end.
+    Oscillators keep their phase, so they may start before the window;
+    measure.py clips records to the window.
     """
     end = window + timedelta(days=days)
     notes = []
@@ -206,19 +220,28 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False):
                     osc['end'] = iso(end)
                 if scale != 1:
                     pat['multiplier']['ratio'] = max(1, int(round(pat['multiplier']['ratio'] * scale)))
-        elif plugin in ('cron', 'linspace'):
+        elif plugin == 'cron':
             if not live:
                 for key in ('start', 'end'):
                     if key not in conf:
-                        raise CaptureError('%s input: %s must be set explicitly' % (plugin, key))
+                        raise CaptureError('cron input: %s must be set explicitly' % key)
                 conf['start'] = iso(window)
                 conf['end'] = iso(end - timedelta(seconds=1))
-            if scale != 1 and 'count' in conf:
+            if scale != 1:
+                conf['count'] = max(1, int(round(conf['count'] * scale)))
+        elif plugin == 'linspace':
+            a, b = parse_iso(conf.get('start')), parse_iso(conf.get('end'))
+            if a is None or b is None:
+                raise CaptureError('linspace input: start and end must be datetimes with an offset')
+            if not live:
+                conf['start'], conf['end'] = iso(window), iso(window + (b - a))
+            if scale != 1:
                 conf['count'] = max(1, int(round(conf['count'] * scale)))
         elif plugin == 'timer':
+            seconds = float(conf['seconds'])
             if not live:
-                conf['start'] = iso(window)
-                conf['repeat'] = max(1, int(days * 86400 // float(conf['seconds'])))
+                conf['start'] = iso(window - timedelta(seconds=seconds))  # first tick at the window start
+                conf['repeat'] = max(1, int(days * 86400 // seconds))
             if scale != 1:
                 conf['count'] = max(1, int(round(conf.get('count', 1) * scale)))
         elif plugin == 'timestamps':
@@ -231,10 +254,13 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False):
 
 
 def set_mode(cfg, mode, interval):
-    params = cfg['event']['template'].setdefault('params', {}) or {}
-    cfg['event']['template']['params'] = params
     if mode == 'as-is':
         return
+    event = cfg.get('event') or {}
+    if 'template' not in event:
+        raise CaptureError('mode %s needs the template event plugin' % mode)
+    params = event['template'].get('params') or {}
+    event['template']['params'] = params
     if 'anomaly_mode' not in params:
         raise CaptureError('mode %s requested but the generator has no anomaly_mode' % mode)
     params['anomaly_mode'] = mode == 'on'
@@ -256,19 +282,22 @@ def file_output(cfg, path):
 
 
 def prepare(src, dst, py, window, days, mode='as-is', interval=None, scale=1, live=False):
-    """Copy the generator to dst and bound it; (generator.yml path, notes)."""
+    """Copy the generator to dst and bound it; (generator.yml path, config, notes)."""
     src = Path(src).resolve()
     if dst.exists():
         shutil.rmtree(dst)
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns('output', '.*'))
     cfg_path = dst / 'generator.yml'
-    loaded = load_yaml(py, [cfg_path])
-    cfg = loaded[cfg_path]
+    cfg = load_yaml(py, [cfg_path])[cfg_path]
     pat_paths = []
     for item in cfg.get('input') or []:
         (plugin, conf), = item.items()
         if plugin == 'time_patterns':
-            pat_paths += [(dst / p).resolve() for p in (conf or {}).get('patterns') or []]
+            for rel in (conf or {}).get('patterns') or []:
+                path = (dst / rel).resolve()
+                if dst.resolve() not in path.parents:
+                    raise CaptureError('pattern %s lies outside the generator directory' % rel)
+                pat_paths.append(path)
     patterns = load_yaml(py, pat_paths) if pat_paths else {}
     notes = bound(dst, cfg, patterns, window, days, scale, live)
     set_mode(cfg, mode, interval)
@@ -305,7 +334,7 @@ def execute(eventum, cfg_path, run_id, out_dir, mem, timeout, live=False, second
            '--live-mode', 'true' if live else 'false', '--keep-order', 'true', '-vvv']
     with open(log, 'w', encoding='utf-8') as fh:
         res = slot.run(cmd, mem_mb=mem, timeout=seconds if live else timeout,
-                       stdout=fh, stderr=subprocess.STDOUT)
+                       stdout=fh, stderr=subprocess.STDOUT, env=CHILD_ENV)
     res['log'] = str(log)
     res['log_lines'] = len(log_lines(log))
     return res
@@ -318,8 +347,7 @@ def ts_template_config(cfg, dst):
     tpl = cfg['event']['template']
     tpl['mode'] = 'all'
     tpl['templates'] = [{'ts': {'template': 'templates/_ts.json.jinja'}}]
-    for key in ('chain',):
-        tpl.pop(key, None)
+    tpl.pop('chain', None)
     cfg['output'][0]['file']['formatter'] = {'format': 'json'}
 
 
@@ -336,23 +364,34 @@ def replay_config(cfg, groups, dst):
     cfg['input'] = inputs
 
 
+def count_lines(path):
+    if not path.exists():
+        return 0
+    with open(path, 'rb') as fh:
+        return sum(1 for ln in fh if ln.strip())
+
+
 def one(args, name, kind, mode, interval, days, eventum, py, window, carrier=()):
     out = Path(args.out)
     work = out / 'work' / name
-    rec = {'name': name, 'kind': kind, 'mode': mode, 'interval': interval, 'days': days}
+    rec = {'name': name, 'kind': kind, 'mode': mode, 'interval': interval, 'days': days,
+           'window_start': iso(window), 'window_end': iso(window + timedelta(days=days))}
     try:
         cfg_path, cfg, notes = prepare(args.generator, work, py, window, days, mode, interval)
         rec['notes'] = notes
         if kind == 'check':
             return check_pair(args, rec, cfg_path, cfg, work, eventum, py, window, days, mode, interval, carrier)
-        res = execute(eventum, cfg_path, name, out, args.mem, args.timeout)
-        rec.update(res)
+        rec.update(execute(eventum, cfg_path, name, out, args.mem, args.timeout))
         produced = work / 'output' / 'events.out'
-        capture = out / (name + '.jsonl.gz')
-        rec['lines'] = gzip_to(produced, capture) if produced.exists() else 0
-        rec['capture'] = str(capture)
+        rec['lines'] = 0
+        if produced.exists():
+            capture = out / (name + '.jsonl.gz')
+            rec['lines'] = gzip_to(produced, capture)
+            rec['capture'] = str(capture)
     except CaptureError as exc:
         rec.update({'exit': 2, 'reason': 'config', 'error': str(exc)})
+    except Exception as exc:  # a run never takes the whole set down
+        rec.update({'exit': 2, 'reason': 'error', 'error': '%s: %s' % (type(exc).__name__, exc)})
     finally:
         if not args.keep:
             shutil.rmtree(work, ignore_errors=True)
@@ -365,6 +404,7 @@ def check_pair(args, rec, cfg_path, cfg, work, eventum, py, window, days, mode, 
     ts_template_config(cfg, work)
     dump(cfg_path, cfg)
     res = execute(eventum, cfg_path, rec['name'] + '-ts', out, args.mem, args.timeout)
+    rec.update({'ts_exit': res['exit'], 'ts_reason': res['reason'], 'ts_log_lines': res['log_lines']})
     stamps_file = work / 'output' / 'events.out'
     groups, total = {}, 0
     if stamps_file.exists():
@@ -379,26 +419,25 @@ def check_pair(args, rec, cfg_path, cfg, work, eventum, py, window, days, mode, 
                 groups.setdefault(tags, []).append(obj['t'])
                 total += 1
     rec['timestamps'] = total
-    rec['ts_log_lines'] = res['log_lines']
-    rec['ts_exit'] = res['exit']
-    # Replay the same moments through the real templates.
     work2 = out / 'work' / (rec['name'] + '-replay')
-    cfg2_path, cfg2, _ = prepare(args.generator, work2, py, window, days, mode, interval)
-    replay_config(cfg2, groups, work2)
-    dump(cfg2_path, cfg2)
-    res2 = execute(eventum, cfg2_path, rec['name'] + '-replay', out, args.mem, args.timeout)
-    produced = work2 / 'output' / 'events.out'
-    rec['lines'] = sum(1 for ln in open(produced, 'rb') if ln.strip()) if produced.exists() else 0
-    rec.update({k: res2[k] for k in ('exit', 'reason', 'wall_s', 'peak_mb', 'log', 'log_lines')})
-    rec['dropped'] = total - rec['lines']
+    try:
+        cfg2_path, cfg2, _ = prepare(args.generator, work2, py, window, days, mode, interval)
+        replay_config(cfg2, groups, work2)
+        dump(cfg2_path, cfg2)
+        res2 = execute(eventum, cfg2_path, rec['name'] + '-replay', out, args.mem, args.timeout)
+        rec['lines'] = count_lines(work2 / 'output' / 'events.out')
+        rec.update({k: res2[k] for k in ('exit', 'reason', 'wall_s', 'peak_mb', 'log', 'log_lines')})
+    finally:
+        if not args.keep:
+            shutil.rmtree(work2, ignore_errors=True)
+    rec['missing'] = max(0, total - rec['lines'])
+    rec['extra'] = max(0, rec['lines'] - total)
     rec['carrier_excluded'] = list(carrier)
-    if not args.keep:
-        shutil.rmtree(work2, ignore_errors=True)
     return rec
 
 
 def plan(args, has_chain):
-    counts = dict(SETS[args.set])
+    counts = SETS[args.set]
     runs = []
     for i in range(counts['off']):
         runs.append(('off-%d' % (i + 1), 'off', 'off' if has_chain else 'as-is', None, args.days))
@@ -411,6 +450,36 @@ def plan(args, has_chain):
     return runs
 
 
+def window_start(value):
+    d = parse_iso(value)
+    if d is None:
+        raise CaptureError('--start must be an ISO datetime with an offset: %s' % value)
+    return d
+
+
+def run_problems(results):
+    problems = []
+    for r in results:
+        bad = (r.get('exit') != 0 or r.get('log_lines')
+               or r.get('ts_exit') not in (None, 0) or r.get('ts_log_lines'))
+        if not bad:
+            continue
+        hint = {'memory': ': memory above 1.5 x --mem, rerun with a larger --mem',
+                'timeout': ': exceeded --timeout', 'no-slot': ': no slot',
+                'cancelled': ': cancelled'}.get(r.get('reason') or r.get('ts_reason'), '')
+        problems.append('%s: exit %s, %s log lines%s%s (log: %s)' % (
+            r['name'], r.get('exit'), r.get('log_lines'), hint,
+            ' (%s)' % r['error'] if r.get('error') else '', r.get('log')))
+    return problems
+
+
+def cleanup_work(out):
+    try:
+        (Path(out) / 'work').rmdir()  # only when no other command still uses it
+    except OSError:
+        pass
+
+
 def cmd_run(args):
     eventum = find_eventum(args.eventum)
     ver = eventum_version(eventum)
@@ -419,50 +488,56 @@ def cmd_run(args):
     py = eventum_python(eventum)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    window = datetime.fromisoformat(args.start)
+    window = window_start(args.start)
     gen = Path(args.generator).resolve()
     cfg = load_yaml(py, [gen / 'generator.yml'])[gen / 'generator.yml']
     params = ((cfg.get('event') or {}).get('template') or {}).get('params') or {}
     has_chain = 'anomaly_mode' in params
     runs = plan(args, has_chain)
     started = time.time()
+    slot.cancel_on_signals()
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(runs)) as pool:
         futs = [pool.submit(one, args, n, k, m, i, d, eventum, py, window, args.carrier)
                 for n, k, m, i, d in runs]
         results = [f.result() for f in futs]
     if not args.keep:
-        shutil.rmtree(out / 'work', ignore_errors=True)
+        cleanup_work(out)
+    problems = run_problems(results)
     manifest = {
         'generator': str(gen), 'eventum': '.'.join(map(str, ver)),
-        'window_start': args.start, 'has_chain': has_chain,
+        'window_start': iso(window), 'has_chain': has_chain,
         'default_interval_hours': params.get('anomaly_interval_hours'),
-        'set': args.set, 'wall_s': round(time.time() - started, 1), 'runs': results,
+        'set': args.set, 'wall_s': round(time.time() - started, 1),
+        'ok': not problems, 'problems': problems, 'runs': results,
     }
-    problems = []
-    for r in results:
-        if r.get('exit') != 0 or r.get('log_lines') or r.get('ts_log_lines'):
-            hint = {'memory': ': memory above 1.5 x --mem, rerun with a larger --mem',
-                    'timeout': ': exceeded --timeout',
-                    'no-slot': ': no slot'}.get(r.get('reason'), '')
-            problems.append('%s: exit %s, %s log lines%s%s (log: %s)' % (
-                r['name'], r.get('exit'), r.get('log_lines'), hint,
-                ' (%s)' % r['error'] if r.get('error') else '', r.get('log')))
-    manifest['ok'] = not problems
-    manifest['problems'] = problems
     dump(out / 'manifest.json', manifest)
     print(json.dumps({'manifest': str(out / 'manifest.json'), 'ok': manifest['ok'],
                       'problems': problems, 'wall_s': manifest['wall_s']}, indent=1))
-    return 0 if manifest['ok'] else 1
+    return 130 if slot.CANCEL.is_set() else (0 if manifest['ok'] else 1)
 
 
 def cmd_one(args):
     eventum = find_eventum(args.eventum)
     py = eventum_python(eventum)
     Path(args.out).mkdir(parents=True, exist_ok=True)
-    window = datetime.fromisoformat(args.start)
-    rec = one(args, args.name, 'custom', args.mode, args.interval, args.days, eventum, py, window)
+    slot.cancel_on_signals()
+    rec = one(args, args.name, 'custom', args.mode, args.interval, args.days, eventum, py,
+              window_start(args.start))
+    if not args.keep:
+        cleanup_work(args.out)
     print(json.dumps(rec, indent=1))
-    return 0 if rec.get('exit') == 0 and not rec.get('log_lines') else 1
+    return 0 if not run_problems([rec]) else 1
+
+
+def resolve(obj, path):
+    """Value at a dotted path; a literal key with dots is tried first."""
+    if isinstance(obj, dict) and path in obj:
+        return obj[path]
+    for part in path.split('.'):
+        if not isinstance(obj, dict) or part not in obj:
+            return None
+        obj = obj[part]
+    return obj
 
 
 def cmd_live(args):
@@ -472,46 +547,49 @@ def cmd_live(args):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     work = out / 'work' / 'live'
+    slot.cancel_on_signals()
     now = datetime.now(timezone.utc)
-    cfg_path, _, notes = prepare(args.generator, work, py, now, 1, 'as-is', None,
-                                 scale=args.scale, live=True)
-    produced = work / 'output' / 'events.out'
-    samples, stop = [], threading.Event()
+    try:
+        cfg_path, _, notes = prepare(args.generator, work, py, now, 1, 'as-is', None,
+                                     scale=args.scale, live=True)
+        produced = work / 'output' / 'events.out'
+        samples, stop = [], threading.Event()
 
-    def follow():
-        pos, buf = 0, b''
-        while not stop.is_set():
-            time.sleep(1)
-            if not produced.exists():
-                continue
-            with open(produced, 'rb') as fh:
-                fh.seek(pos)
-                chunk = fh.read()
-                pos = fh.tell()
-            wall = time.time()
-            buf += chunk
-            *lines, buf = buf.split(b'\n')
-            for ln in lines:
-                if ln.strip():
-                    samples.append((wall, ln))
+        def follow():
+            pos, buf = 0, b''
+            while not stop.is_set():
+                time.sleep(1)
+                if not produced.exists():
+                    continue
+                with open(produced, 'rb') as fh:
+                    fh.seek(pos)
+                    chunk = fh.read()
+                    pos = fh.tell()
+                wall = time.time()
+                buf += chunk
+                *lines, buf = buf.split(b'\n')
+                samples.extend((wall, ln) for ln in lines if ln.strip())
 
-    t = threading.Thread(target=follow, daemon=True)
-    t.start()
-    res = execute(eventum, cfg_path, 'live', out, args.mem, None, live=True, seconds=args.seconds)
-    time.sleep(1.5)
-    stop.set()
-    t.join()
+        t = threading.Thread(target=follow, daemon=True)
+        t.start()
+        res = execute(eventum, cfg_path, 'live', out, args.mem, None, live=True, seconds=args.seconds)
+        time.sleep(1.5)
+        stop.set()
+        t.join()
+    finally:
+        if not args.keep:
+            shutil.rmtree(work, ignore_errors=True)
+            cleanup_work(out)
     lags, order_breaks, prev = [], 0, None
     for wall, ln in samples:
         try:
             v = resolve(json.loads(ln), args.ts_path)
         except ValueError:
             continue
-        ts = parse_dt(v) if isinstance(v, str) else None
+        ts = parse_iso(v)
         if ts is None:
             continue
-        lag = wall - ts.timestamp()
-        lags.append(lag)
+        lags.append(wall - ts.timestamp())
         if prev is not None and ts < prev:
             order_breaks += 1
         prev = ts
@@ -519,23 +597,30 @@ def cmd_live(args):
     for wall, _ in samples:
         per_sec[int(wall)] = per_sec.get(int(wall), 0) + 1
     counts = [per_sec[k] for k in sorted(per_sec)]
+    median = sorted(counts)[len(counts) // 2] if counts else 0
     report = {
         'seconds': args.seconds, 'scale': args.scale, 'records': len(samples),
         'records_with_time': len(lags), 'order_breaks': order_breaks,
         'lag_s': {'min': round(min(lags), 2), 'max': round(max(lags), 2),
                   'median': round(sorted(lags)[len(lags) // 2], 2)} if lags else None,
         'future_records': sum(1 for x in lags if x < -1.0),
-        'first_second': counts[0] if counts else 0,
-        'median_per_second': sorted(counts)[len(counts) // 2] if counts else 0,
+        'first_second': counts[0] if counts else 0, 'median_per_second': median,
         'log_lines': res['log_lines'], 'log': res['log'], 'peak_mb': res['peak_mb'],
-        'stopped_by': res['reason'], 'notes': notes,
+        'stopped_by': res['reason'], 'notes': notes, 'problems': [],
     }
-    report['ok'] = (res['log_lines'] == 0 and order_breaks == 0
-                    and report['future_records'] == 0
-                    and (not counts or counts[0] <= max(10, 3 * report['median_per_second'])))
+    if res['log_lines']:
+        report['problems'].append('log not empty')
+    if order_breaks:
+        report['problems'].append('records out of order')
+    if report['future_records']:
+        report['problems'].append('records ahead of the wall clock')
+    if counts and counts[0] > max(10, 3 * median):
+        report['problems'].append('burst in the first second')
+    if not lags:
+        report['problems'].append('no record with a readable %s: nothing measured (native output: '
+                                  'pass --ts-path; a schedule may have no run in the window)' % args.ts_path)
+    report['ok'] = not report['problems']
     dump(out / 'live.json', report)
-    if not args.keep:
-        shutil.rmtree(out / 'work', ignore_errors=True)
     print(json.dumps(report, indent=1))
     return 0 if report['ok'] else 1
 

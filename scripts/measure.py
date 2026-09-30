@@ -83,6 +83,41 @@ def compile_value(spec):
     return get
 
 
+def scalar(item):
+    """String form used to compare values: 'true', '5', '1.5', JSON for objects."""
+    if isinstance(item, str):
+        return item
+    if isinstance(item, bool):
+        return 'true' if item else 'false'
+    if isinstance(item, (dict, list)):
+        return json.dumps(item, sort_keys=True)
+    return str(item)
+
+
+def parse_time(v):
+    """Epoch seconds from ISO 8601 (Z, +HHMM, long or comma fractions) or epoch
+    s / ms / us / ns; None when unreadable."""
+    if re.fullmatch(r'-?\d+(\.\d+)?', v):
+        x = float(v)
+        for limit, scale in ((1e17, 1e9), (1e14, 1e6), (1e11, 1e3)):
+            if abs(x) > limit:
+                return x / scale
+        return x
+    s = v.strip().replace(',', '.')
+    if 'T' not in s and ' ' in s:
+        s = s.replace(' ', 'T', 1)
+    s = re.sub(r'[Zz]$', '+00:00', s)
+    s = re.sub(r'([+-]\d\d)(\d\d)$', r'\1:\2', s)
+    s = re.sub(r'\.(\d{1,6})\d*', lambda m: '.' + m.group(1).ljust(6, '0'), s)
+    try:
+        d = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d.timestamp()
+
+
 NUMERIC = {'gt': lambda a, b: a > b, 'ge': lambda a, b: a >= b,
            'lt': lambda a, b: a < b, 'le': lambda a, b: a <= b}
 
@@ -94,7 +129,7 @@ def compile_cond(cond):
         return None
     if 'path' in cond:
         path = cond['path']
-        vals = {str(x) for x in cond['values']} if 'values' in cond else None
+        vals = {scalar(x) for x in cond['values']} if 'values' in cond else None
         rx = re.compile(cond['regex']) if cond.get('regex') else None
         nums = [(NUMERIC[k], float(cond[k])) for k in NUMERIC if k in cond]
         missing = bool(cond.get('missing'))
@@ -104,9 +139,7 @@ def compile_cond(cond):
             if v is None:
                 return missing
             for item in (v if isinstance(v, list) else [v]):
-                s = item if isinstance(item, str) else (
-                    json.dumps(item) if isinstance(item, (dict, list)) else str(item).lower()
-                    if isinstance(item, bool) else str(item))
+                s = scalar(item)
                 if vals is not None and s in vals:
                     return True
                 if rx is not None and rx.search(s):
@@ -177,19 +210,13 @@ class Spec:
         v = self.ts_get(row)
         if v is None:
             return None
+        if not self.ts_format:
+            return parse_time(v)
         try:
-            if self.ts_format and self.ts_year:
+            if self.ts_year:
                 d = datetime.strptime('%s %s' % (self.ts_year, v), '%Y ' + self.ts_format)
-            elif self.ts_format:
-                d = datetime.strptime(v, self.ts_format)
             else:
-                if re.fullmatch(r'\d+(\.\d+)?', v):
-                    x = float(v)
-                    return x / 1000.0 if x > 1e11 else x
-                s = v[:-1] + '+00:00' if v.endswith('Z') else v
-                if ' ' in s and 'T' not in s:
-                    s = s.replace(' ', 'T', 1)
-                d = datetime.fromisoformat(s)
+                d = datetime.strptime(v, self.ts_format)
         except ValueError:
             return None
         if d.tzinfo is None:
@@ -201,9 +228,8 @@ class Spec:
 
 
 def open_capture(path):
-    if path.endswith('.gz'):
-        return gzip.open(path, 'rt', encoding='utf-8', newline='')
-    return open(path, encoding='utf-8', newline='')
+    """Binary handle; records are split on \\n only."""
+    return gzip.open(path, 'rb') if path.endswith('.gz') else open(path, 'rb')
 
 
 def step_ok(step, row, binds):
@@ -236,25 +262,32 @@ def chain_key(chain, row):
     return k
 
 
-def scan(spec_raw, path):
-    """Everything measurable from one capture in one pass."""
+def scan(spec_raw, path, lo=None, hi=None):
+    """Everything measurable from one capture in one pass.
+
+    Records outside [lo, hi) are counted as outside the window and skipped.
+    Chains: partial matches are kept per (step, bindings) with their earliest
+    and latest first-step time, so every candidate stays alive in linear
+    time; a completion whose first step falls inside the previous counted
+    chain of the same key belongs to that chain.
+    """
     spec = Spec(spec_raw)
     out = {
-        'path': os.path.basename(path), 'records': 0, 'unparsed': 0, 'no_time': 0, 'excluded': 0,
-        'order_breaks': 0, 'first': None, 'last': None,
+        'path': path, 'records': 0, 'unparsed': 0, 'no_time': 0, 'excluded': 0,
+        'outside_window': 0, 'order_breaks': 0, 'first': None, 'last': None,
         'days': {}, 'hours': [0] * 24, 'classes': {},
         'groups': {g: {'records': 0, 'hours': [0] * 24} for g in spec.groups},
         'actors': {}, 'chains': [], 'step_hits': [], 'keys': [],
     }
     chain = spec.chain
-    state, keys = {}, set()
+    state, keys, last_chain_end = {}, set(), {}
     if chain:
         out['step_hits'] = [0] * len(chain['steps'])
     prev = None
     actor_times = {}
     with open_capture(path) as fh:
         for raw in fh:
-            line = raw.rstrip('\r\n')
+            line = raw.rstrip(b'\r\n').decode('utf-8', 'replace')
             if not line.strip():
                 continue
             row = spec.row(line)
@@ -268,13 +301,20 @@ def scan(spec_raw, path):
             if t is None:
                 out['no_time'] += 1
                 continue
+            try:
+                day = datetime.fromtimestamp(t, tz=timezone.utc).strftime('%Y-%m-%d')
+            except (OverflowError, OSError, ValueError):
+                out['no_time'] += 1
+                continue
+            if (lo is not None and t < lo) or (hi is not None and t >= hi):
+                out['outside_window'] += 1
+                continue
             out['records'] += 1
             if prev is not None and t < prev:
                 out['order_breaks'] += 1
             prev = t
             out['first'] = t if out['first'] is None else min(out['first'], t)
             out['last'] = t if out['last'] is None else max(out['last'], t)
-            day = datetime.fromtimestamp(t, tz=timezone.utc).strftime('%Y-%m-%d')
             hour = int(t // 3600 % 24)
             out['days'][day] = out['days'].get(day, 0) + 1
             out['hours'][hour] += 1
@@ -298,34 +338,41 @@ def scan(spec_raw, path):
             for i, step in enumerate(steps):
                 if step['_c'](row):
                     out['step_hits'][i] += 1
-            parts = [p for p in state.get(k, ()) if t - p[1] <= within]
-            new, seen, done = [], set(), None
-            for idx, t0, binds, actor in parts:
-                sig = (idx, t0, tuple(sorted(binds.items())))
-                if sig not in seen:
-                    seen.add(sig)
-                    new.append((idx, t0, binds, actor))
-                nb = step_ok(steps[idx], row, binds)
+            # Partials {(idx, binds): (earliest t0, latest t0, actor)}: every path
+            # at one step with one binding advances together, so the range of
+            # first-step times is exact for existence (the latest decides expiry)
+            # and the earliest still-valid time is reported as the start.
+            parts = {sig: v for sig, v in state.get(k, {}).items() if t - v[1] <= within}
+            nxt, done = dict(parts), None
+
+            def add(sig, lo, hi, actor):
+                cur = nxt.get(sig)
+                nxt[sig] = (lo, hi, actor) if cur is None else (min(cur[0], lo), max(cur[1], hi), cur[2])
+
+            for (idx, bsig), (e0, l0, actor) in parts.items():
+                nb = step_ok(steps[idx], row, dict(bsig))
                 if nb is None:
                     continue
+                lo = e0 if t - e0 <= within else l0
                 if idx + 1 == len(steps):
-                    if done is None or t0 < done[0]:
-                        done = (t0, t, k, actor)
+                    if done is None or lo < done[0]:
+                        done = (lo, t, k, actor)
                     continue
-                sig = (idx + 1, t0, tuple(sorted(nb.items())))
-                if sig not in seen:
-                    seen.add(sig)
-                    new.append((idx + 1, t0, nb, actor))
-            if done:
-                out['chains'].append(done)
+                add((idx + 1, tuple(sorted(nb.items()))), lo, l0, actor)
             nb = step_ok(steps[0], row, {})
             if nb is not None:
                 if len(steps) == 1:
-                    out['chains'].append((t, t, k, a))
+                    done = done or (t, t, k, a)
                 else:
-                    new.append((1, t, nb, a))
-            if new:
-                state[k] = new
+                    add((1, tuple(sorted(nb.items()))), t, t, a)
+            if done:
+                if done[0] <= last_chain_end.get(k, float('-inf')):
+                    last_chain_end[k] = max(last_chain_end[k], done[1])
+                else:
+                    out['chains'].append(done)
+                    last_chain_end[k] = done[1]
+            if nxt:
+                state[k] = nxt
             else:
                 state.pop(k, None)
     out['keys'] = sorted(keys)
@@ -333,15 +380,19 @@ def scan(spec_raw, path):
     return out
 
 
-def scan_many(spec_raw, paths):
-    if len(paths) == 1:
-        return [scan(spec_raw, paths[0])]
-    workers = min(len(paths), os.cpu_count() or 2)
+def _scan_job(args):
+    return scan(*args)
+
+
+def scan_many(spec_raw, paths, windows=None):
+    """Scan captures in parallel processes; windows: [(lo, hi)] per path."""
+    jobs = [(spec_raw, p) + tuple(windows[i] if windows else (None, None))
+            for i, p in enumerate(paths)]
+    if len(jobs) == 1:
+        return [_scan_job(jobs[0])]
+    workers = min(len(jobs), os.cpu_count() or 2)
     with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(scan, [spec_raw] * len(paths), paths))
-
-
-# --- summaries ----------------------------------------------------------------
+        return list(pool.map(_scan_job, jobs))
 
 
 def iso(t):
@@ -378,12 +429,13 @@ def profile(results, top=40):
         return [round(100.0 * x / s, 2) for x in h]
     return {
         'records': total,
-        'per_day': {'min': min(per_day), 'median': statistics.median(per_day),
+        'per_day_utc': {'min': min(per_day), 'median': statistics.median(per_day),
                     'max': max(per_day)} if per_day else None,
         'class_count': len(classes), 'class_share_pct': shares,
-        'hourly_pct': curve(hours),
+        'hourly_pct_utc': curve(hours),
         'groups': {g: {'share_pct': round(100.0 * v['records'] / total, 2) if total else 0,
-                       'hourly_pct': curve(v['hours'])} for g, v in groups.items()},
+                       'hourly_pct_utc': curve(v['hours'])} for g, v in groups.items()},
+        'outside_window': sum(r['outside_window'] for r in results),
         'unparsed': sum(r['unparsed'] for r in results),
         'no_time': sum(r['no_time'] for r in results),
         'order_breaks': sum(r['order_breaks'] for r in results),
@@ -418,7 +470,7 @@ def episodes_report(on, off, interval_h, window_start, around=1800):
             base.setdefault(actor, []).append((r, times))
     ratios_before, ratios_after = [], []
     for r in on:
-        starts = sorted(r['chains'])
+        starts = sorted(r['chains'], key=lambda c: (c[0], c[1]))
         s_times = [c[0] for c in starts]
         gaps = [round((b - a) / 3600, 2) for a, b in zip(s_times, s_times[1:])]
         first = round((s_times[0] - window_start) / 3600, 2) if s_times else None
@@ -453,7 +505,7 @@ def episodes_report(on, off, interval_h, window_start, around=1800):
             'path': r['path'], 'episodes': len(starts), 'first_start_hours': first,
             'gaps_hours': gaps, 'gap_tolerance_hours': None if w is None else round(w / 2, 2),
             'gaps_outside_tolerance': [g for g in gaps if w is not None and abs(g - interval_h) > w / 2],
-            'start_hours': hours, 'distinct_actors': len(set(actors)),
+            'start_hours_utc': hours, 'distinct_actors': len(set(actors)),
             'distinct_keys': len(set(keys)),
             'spans_seconds': sorted(round(c[1] - c[0]) for c in starts),
             'around': neigh,
@@ -496,20 +548,26 @@ def report(spec_path, manifest_path):
     with open(spec_path, encoding='utf-8') as fh:
         spec_raw = json.load(fh)
     runs = {r['name']: r for r in man['runs']}
-    caps = [r for r in man['runs'] if r.get('capture')]
-    scanned = dict(zip([r['name'] for r in caps], scan_many(spec_raw, [r['capture'] for r in caps])))
+    caps = [r for r in man['runs'] if r.get('capture') and os.path.exists(r['capture'])]
+    windows = [(parse_time(r['window_start']), parse_time(r['window_end'])) if r.get('window_start')
+               else (None, None) for r in caps]
+    results = scan_many(spec_raw, [r['capture'] for r in caps], windows)
+    for res in results:
+        res['path'] = os.path.basename(res['path'])
+    scanned = dict(zip([r['name'] for r in caps], results))
     off = [scanned[r['name']] for r in caps if r['kind'] == 'off']
     on = [scanned[r['name']] for r in caps if r['kind'] == 'on']
     short = [scanned[r['name']] for r in caps if r['kind'] == 'short']
     long_ = [scanned[r['name']] for r in caps if r['kind'] == 'long']
-    window = datetime.fromisoformat(man['window_start']).timestamp()
+    window = parse_time(man['window_start'])
     rep = {'manifest': manifest_path, 'eventum': man['eventum'], 'set': man['set']}
     rep['2_runs'] = {'ok': man['ok'], 'problems': man['problems']}
     chk = runs.get('check')
     rep['3_one_record_per_timestamp'] = None if not chk else {
         'timestamps': chk.get('timestamps'), 'records': chk.get('lines'),
-        'dropped': chk.get('dropped'), 'carrier_excluded': chk.get('carrier_excluded')}
-    rep['4_5_profile'] = profile(long_ or off)
+        'missing': chk.get('missing'), 'extra': chk.get('extra'),
+        'carrier_excluded': chk.get('carrier_excluded')}
+    rep['4_5_profile'] = profile(long_ or off) if (long_ or off) else None
     rep['6_state'] = state_growth(runs['long']) if 'long' in runs else None
     live_path = os.path.join(os.path.dirname(manifest_path), 'live.json')
     if os.path.exists(live_path):
@@ -537,9 +595,13 @@ def flags(rep):
     if not rep['2_runs']['ok']:
         out.append('2: runs failed or logged: %s' % '; '.join(rep['2_runs']['problems']))
     chk = rep.get('3_one_record_per_timestamp')
-    if chk and chk.get('dropped'):
-        out.append('3: %d of %d timestamps yielded no record' % (chk['dropped'], chk['timestamps']))
-    prof = rep['4_5_profile']
+    if chk and chk.get('missing'):
+        out.append('3: %d of %d timestamps yielded no record' % (chk['missing'], chk['timestamps']))
+    if chk and chk.get('extra'):
+        out.append('3: %d records more than the %d timestamps' % (chk['extra'], chk['timestamps']))
+    prof = rep['4_5_profile'] or {'unparsed': 0, 'no_time': 0, 'order_breaks': 0}
+    if not rep['4_5_profile']:
+        out.append('2: no background or long capture to measure')
     if prof['unparsed'] or prof['no_time']:
         out.append('1: %d unparsed records, %d without a timestamp' % (prof['unparsed'], prof['no_time']))
     if prof['order_breaks']:
@@ -639,7 +701,7 @@ def main():
             with open(args.save, 'w', encoding='utf-8') as fh:
                 json.dump(rep, fh, indent=1, ensure_ascii=False)
         emit(rep)
-        return 0
+        return 1 if rep['flags'] else 0
     if args.cmd == 'profile':
         with open(args.spec, encoding='utf-8') as fh:
             spec_raw = json.load(fh)

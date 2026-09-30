@@ -7,17 +7,19 @@ exhaust its memory or collide on an exclusive resource.
     slot.py run [--mem MB] [--pool NAME ...] [--timeout S] [--wait S]
                 [--json] -- CMD [ARG ...]
         Reserves MB of the host memory budget and every named exclusive
-        pool, runs CMD, releases them. Exit status is CMD's, or 124 on
-        timeout, 137 when the process tree exceeded 1.5 x MB (Linux),
-        75 when the slots were not free within --wait seconds.
+        pool, runs CMD, releases them. Exit status is CMD's (128+N when
+        killed by signal N), 124 on timeout, 137 when the process tree
+        exceeded 1.5 x MB (Linux), 75 when the slots were not free
+        within --wait seconds, 130 when cancelled.
     slot.py status
         Memory budget, reservations and exclusive pools in use.
 
 Slots are OS file locks under $CONTENT_DESIGN_STATE (default
 ~/.cache/content-design, %LOCALAPPDATA%\\content-design on Windows):
 the OS releases them when a holder dies, so a crash never leaks one.
-The memory budget is $CONTENT_DESIGN_MEM_MB or half the physical
-memory. Only the command's own process tree is ever killed.
+On Linux a command dies with the process that started it. The memory
+budget is $CONTENT_DESIGN_MEM_MB or half the physical memory. Only
+the command's own process tree is ever killed.
 
 Standard library only; Python 3.9+.
 """
@@ -28,19 +30,30 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
 
-UNIT_MB = 64
+UNIT_MB = 256
 DEFAULT_MEM_MB = 512
 MEMORY_POOL = 'memory'
+FAIR_AFTER_S = 30
 WINDOWS = os.name == 'nt'
+CANCEL = threading.Event()  # set by a signal handler: running commands stop
 
 if WINDOWS:
     import msvcrt
 else:
     import fcntl
+    import resource
+    try:  # one descriptor per held unit: lift the soft limit to the hard one
+        _soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        _want = 65536 if _hard == resource.RLIM_INFINITY else min(_hard, 65536)
+        if _soft != resource.RLIM_INFINITY and _soft < _want:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (_want, _hard))
+    except (ValueError, OSError):
+        pass
 
 
 def state_dir():
@@ -135,52 +148,63 @@ class Lease:
             self._info = None
 
 
-def _grab(pool, units):
-    """All `units` free units of `pool`, or None; caller holds the mutex."""
+def _grab(pool, units, held):
+    """Lock free units of `pool` into `held` until it holds `units` of them."""
     pdir = state_dir() / pool
     pdir.mkdir(exist_ok=True)
-    got = []
+    have = sum(1 for p, _ in held if p == pool)
     for i in range(capacity(pool)):
-        fh = open(pdir / ('u%d.lock' % i), 'a+')
+        if have >= units:
+            break
+        path = pdir / ('u%d.lock' % i)
+        if any(str(fh.name) == str(path) for _, fh in held):
+            continue
+        fh = open(path, 'a+')
         if _try_lock(fh):
-            got.append(fh)
-            if len(got) == units:
-                return got
+            held.append((pool, fh))
+            have += 1
         else:
             fh.close()
-    for fh in got:
-        _unlock(fh)
-    return None
+    return have >= units
 
 
 def acquire(mem_mb=0, pools=(), wait=None, label=''):
-    """Reserve memory and exclusive pools atomically; Lease or None."""
+    """Reserve memory and exclusive pools atomically; Lease or None.
+
+    A request waits its turn: after FAIR_AFTER_S seconds it keeps the
+    pool mutex and collects units as holders release them, so a large
+    request is not starved by a stream of small ones.
+    """
     need = [(p, 1) for p in sorted(set(pools))]
     if mem_mb:
         units = min(-(-mem_mb // UNIT_MB), capacity(MEMORY_POOL))
         need.append((MEMORY_POOL, units))
     root = state_dir()
-    deadline = None if wait is None else time.monotonic() + wait
+    started = time.monotonic()
+    deadline = None if wait is None else started + wait
     while True:
         mutex = _lock_blocking(root / '.mutex')
         held = []
+        fair = time.monotonic() - started >= FAIR_AFTER_S
         try:
-            for pool, units in need:
-                got = _grab(pool, units)
-                if got is None:
+            while True:
+                if all(_grab(pool, units, held) for pool, units in need):
+                    info = root / ('holder-%d-%s.json' % (os.getpid(), uuid.uuid4().hex[:8]))
+                    info.write_text(json.dumps({
+                        'pid': os.getpid(), 'label': label, 'mem_mb': mem_mb,
+                        'pools': sorted(set(pools)), 'since': time.time()}))
+                    lease = Lease([fh for _, fh in held], info)
+                    held = []
+                    return lease
+                out_of_time = deadline is not None and time.monotonic() >= deadline
+                if not fair or out_of_time or CANCEL.is_set():
                     break
-                held.extend(got)
-            else:
-                info = root / ('holder-%d-%s.json' % (os.getpid(), uuid.uuid4().hex[:8]))
-                info.write_text(json.dumps({
-                    'pid': os.getpid(), 'label': label, 'mem_mb': mem_mb,
-                    'pools': sorted(set(pools)), 'since': time.time()}))
-                return Lease(held, info)
-            for fh in held:
-                _unlock(fh)
+                time.sleep(0.5)
         finally:
+            for _, fh in held:
+                _unlock(fh)
             _unlock(mutex)
-        if deadline is not None and time.monotonic() >= deadline:
+        if deadline is not None and time.monotonic() >= deadline or CANCEL.is_set():
             return None
         time.sleep(0.5)
 
@@ -224,6 +248,7 @@ def _tree_rss_mb(pgid):
     if not sys.platform.startswith('linux'):
         return None
     total = 0
+    page = os.sysconf('SC_PAGE_SIZE')
     for entry in os.listdir('/proc'):
         if not entry.isdigit():
             continue
@@ -233,44 +258,57 @@ def _tree_rss_mb(pgid):
             if int(stat[2]) != pgid:
                 continue
             with open('/proc/%s/statm' % entry) as fh:
-                total += int(fh.read().split()[1]) * os.sysconf('SC_PAGE_SIZE')
+                total += int(fh.read().split()[1]) * page
         except (OSError, IndexError, ValueError):
             continue
     return total / (1024 * 1024)
 
 
+def _die_with_parent():
+    """Linux: the child gets SIGKILL when the process that started it dies."""
+    try:
+        import ctypes
+        ctypes.CDLL('libc.so.6', use_errno=True).prctl(1, signal.SIGKILL)  # PR_SET_PDEATHSIG
+    except (OSError, AttributeError):
+        pass
+
+
 def _kill_tree(proc):
-    if proc.poll() is not None:
-        return
     if WINDOWS:
-        subprocess.run(['taskkill', '/T', '/F', '/PID', str(proc.pid)],
-                       capture_output=True)
+        if proc.poll() is None:
+            subprocess.run(['taskkill', '/T', '/F', '/PID', str(proc.pid)],
+                           capture_output=True)
         return
     try:
         os.killpg(proc.pid, signal.SIGTERM)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         return
     try:
         proc.wait(5)
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        pass
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)  # members that outlived the leader
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
-        stdout=None, stderr=None):
+        stdout=None, stderr=None, env=None):
     """Run cmd under a lease: exit, reason, wall_s, peak_mb, rss_mb series."""
     lease = acquire(mem_mb, pools, wait, label=' '.join(cmd)[:200])
     if lease is None:
-        return {'exit': 75, 'reason': 'no-slot', 'wall_s': 0.0, 'peak_mb': None, 'rss_mb': []}
+        reason = 'cancelled' if CANCEL.is_set() else 'no-slot'
+        return {'exit': 130 if reason == 'cancelled' else 75, 'reason': reason,
+                'wall_s': 0.0, 'peak_mb': None, 'rss_mb': []}
     start = time.monotonic()
-    kwargs = {'cwd': cwd, 'stdout': stdout, 'stderr': stderr}
+    kwargs = {'cwd': cwd, 'stdout': stdout, 'stderr': stderr, 'env': env}
     if WINDOWS:
         kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         kwargs['start_new_session'] = True
+        if sys.platform.startswith('linux'):
+            kwargs['preexec_fn'] = _die_with_parent
     reason, peak, series = 'exit', None, []
     proc = None
     try:
@@ -283,15 +321,18 @@ def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
                 pass
             if proc.poll() is not None:
                 break
-            if not WINDOWS:
-                rss = _tree_rss_mb(proc.pid)
-                if rss is not None:
-                    peak = rss if peak is None else max(peak, rss)
-                    series.append((round(time.monotonic() - start, 1), round(rss)))
-                    if limit and rss > limit:
-                        reason = 'memory'
-                        _kill_tree(proc)
-                        break
+            if CANCEL.is_set():
+                reason = 'cancelled'
+                _kill_tree(proc)
+                break
+            rss = None if WINDOWS else _tree_rss_mb(proc.pid)
+            if rss is not None:
+                peak = rss if peak is None else max(peak, rss)
+                series.append((round(time.monotonic() - start, 1), round(rss)))
+                if limit and rss > limit:
+                    reason = 'memory'
+                    _kill_tree(proc)
+                    break
             if timeout and time.monotonic() - start > timeout:
                 reason = 'timeout'
                 _kill_tree(proc)
@@ -303,7 +344,9 @@ def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
         raise
     finally:
         lease.release()
-    code = {'timeout': 124, 'memory': 137}.get(reason, proc.returncode)
+    rc = proc.returncode
+    code = {'timeout': 124, 'memory': 137, 'cancelled': 130}.get(
+        reason, 128 - rc if rc < 0 else rc)
     step = max(1, len(series) // 40)
     return {'exit': code, 'reason': reason,
             'wall_s': round(time.monotonic() - start, 2),
@@ -311,8 +354,17 @@ def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
             'rss_mb': [list(x) for x in series[::step]]}
 
 
-def _on_signal(signum, _frame):
-    raise KeyboardInterrupt
+def cancel_on_signals():
+    """SIGINT, SIGTERM and SIGHUP stop running commands and pending waits."""
+    def handler(_signum, _frame):
+        CANCEL.set()
+    for name in ('SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            try:
+                signal.signal(sig, handler)
+            except (ValueError, OSError):
+                pass
 
 
 def main():
@@ -333,14 +385,10 @@ def main():
     cmd = args.command[1:] if args.command[:1] == ['--'] else args.command
     if not cmd:
         ap.error('no command given')
-    if not WINDOWS:
-        signal.signal(signal.SIGTERM, _on_signal)
-    try:
-        res = run(cmd, args.mem, args.pool, args.timeout, args.wait)
-    except KeyboardInterrupt:
-        return 130
+    cancel_on_signals()
+    res = run(cmd, args.mem, args.pool, args.timeout, args.wait)
     if args.json or res['reason'] != 'exit':
-        print('slot: ' + json.dumps(res), file=sys.stderr)
+        print('slot: ' + json.dumps({k: v for k, v in res.items() if k != 'rss_mb'}), file=sys.stderr)
     return res['exit']
 
 
