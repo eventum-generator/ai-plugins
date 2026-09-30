@@ -1,0 +1,19 @@
+{
+  "name": "eventum-content-design",
+  "displayName": "Eventum Content Design",
+  "description": "Skills for designing Eventum content: realistic synthetic log generators with anomaly scenarios",
+  "author": {
+    "name": "Eventum"
+  },
+  "homepage": "https://eventum.run",
+  "repository": "https://github.com/eventum-generator/ai-plugins",
+  "license": "Apache-2.0",
+  "keywords": [
+    "eventum",
+    "synthetic-data",
+    "log-generator",
+    "siem",
+    "detection-engineering"
+  ],
+  "skills": "./skills/"
+}

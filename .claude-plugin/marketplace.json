@@ -1,0 +1,17 @@
+{
+  "name": "eventum-ai-plugins",
+  "description": "AI agent plugins for Eventum",
+  "owner": {
+    "name": "Eventum"
+  },
+  "plugins": [
+    {
+      "name": "eventum-content-design",
+      "description": "Skills for designing Eventum content: realistic synthetic log generators with anomaly scenarios",
+      "source": "./",
+      "author": {
+        "name": "Eventum"
+      }
+    }
+  ]
+}
