@@ -5,7 +5,7 @@
   },
   "plugins": [
     {
-      "name": "eventum-content-design",
+      "name": "content-design",
       "source": {
         "source": "local",
         "path": "./"

@@ -1,5 +1,5 @@
 /**
- * Eventum Content Design plugin for OpenCode.
+ * Content Design plugin for OpenCode.
  *
  * Registers this repository's skills directory with OpenCode.
  */
@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const skillsDir = path.resolve(__dirname, '../../skills');
 
-export const EventumContentDesignPlugin = async () => ({
+export const ContentDesignPlugin = async () => ({
   config: async config => {
     config.skills = config.skills || {};
     config.skills.paths = config.skills.paths || [];

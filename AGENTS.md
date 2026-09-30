@@ -1,10 +1,10 @@
-# AGENTS.md - developing eventum-content-design
+# AGENTS.md - developing content-design
 
-The plugin `eventum-content-design` in the marketplace `eventum-ai-plugins` holds skills that let AI coding agents design content for [Eventum](https://eventum.run): generators that stream realistic synthetic events for testing, demos and pipelines. Harnesses: Claude Code, Codex, Cursor, OpenCode. Installation is in `README.md`. Every merge into `master` is a release for all users.
+The plugin `content-design` in the marketplace `eventum-ai-plugins` holds skills that let AI coding agents design content for [Eventum](https://eventum.run): generators that stream realistic synthetic events for testing, demos and pipelines. Harnesses: Claude Code, Codex, Cursor, OpenCode. Installation is in `README.md`. Every merge into `master` is a release for all users.
 
 ## Layout
 
-A skill lives in `skills/<name>/SKILL.md`; next to it `references/` (facts), `scripts/` (Python) and `assets/` (skeletons). The adapters `.claude-plugin/`, `.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json`, `.agents/plugins/marketplace.json` and `.opencode/plugins/eventum-content-design.js` load `skills/` as a whole; a new skill needs no registration. The only automatic check is `scripts/check-no-version.sh`: a `version` field in a manifest freezes updates for users.
+A skill lives in `skills/<name>/SKILL.md`; next to it `references/` (facts), `scripts/` (Python) and `assets/` (skeletons). The adapters `.claude-plugin/`, `.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json`, `.agents/plugins/marketplace.json` and `.opencode/plugins/content-design.js` load `skills/` as a whole; a new skill needs no registration. The only automatic check is `scripts/check-no-version.sh`: a `version` field in a manifest freezes updates for users.
 
 ## Skill structure
 

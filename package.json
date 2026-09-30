@@ -1,7 +1,7 @@
 {
-  "name": "eventum-content-design",
+  "name": "content-design",
   "type": "module",
-  "main": ".opencode/plugins/eventum-content-design.js",
+  "main": ".opencode/plugins/content-design.js",
   "description": "Skills for designing Eventum content: realistic synthetic log generators with anomaly scenarios",
   "license": "Apache-2.0",
   "private": true

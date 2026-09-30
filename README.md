@@ -2,7 +2,7 @@
 
 Plugins that teach AI coding agents to work with [Eventum](https://eventum.run), the synthetic event generator. The repository is both the plugin and its marketplace, and supports Claude Code, Codex, Cursor and OpenCode.
 
-Marketplace: `eventum-ai-plugins`. Plugin: `eventum-content-design`.
+Marketplace: `eventum-ai-plugins`. Plugin: `content-design`.
 
 ## Skills
 
@@ -18,7 +18,7 @@ The skills need Eventum installed (`uv tool install eventum-generator` or `pip i
 
 ```text
 /plugin marketplace add eventum-generator/ai-plugins
-/plugin install eventum-content-design@eventum-ai-plugins
+/plugin install content-design@eventum-ai-plugins
 ```
 
 To receive updates automatically, register the marketplace in `~/.claude/settings.json` with `autoUpdate` (merge with existing keys):
@@ -49,18 +49,18 @@ Codex compares the installed commit with `master` and pulls new versions; `codex
 Add the plugin to `opencode.json`:
 
 ```json
-{ "plugin": ["eventum-content-design@git+https://github.com/eventum-generator/ai-plugins.git"] }
+{ "plugin": ["content-design@git+https://github.com/eventum-generator/ai-plugins.git"] }
 ```
 
 OpenCode does not update plugins by itself; remove `~/.cache/opencode/` and restart to get a new version.
 
 ### Cursor
 
-Add the repository as a team marketplace (Dashboard → Plugins → Add Marketplace, Teams or Enterprise plan), then run `/add-plugin eventum-content-design` in the agent chat.
+Add the repository as a team marketplace (Dashboard → Plugins → Add Marketplace, Teams or Enterprise plan), then run `/add-plugin content-design` in the agent chat.
 
 ## Usage
 
-Ask the agent in plain words, for example "create an Eventum generator for Keycloak admin events with a privilege-escalation scenario" or "make synthetic FortiGate traffic logs for testing our SIEM rules". In Claude Code the skill can also be called as `/eventum-content-design:create-generator`, in Codex as `$create-generator`.
+Ask the agent in plain words, for example "create an Eventum generator for Keycloak admin events with a privilege-escalation scenario" or "make synthetic FortiGate traffic logs for testing our SIEM rules". In Claude Code the skill can also be called as `/content-design:create-generator`, in Codex as `$create-generator`.
 
 ## Versioning
 
