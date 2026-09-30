@@ -1,6 +1,6 @@
 # Chain spec
 
-`scripts/chain_check.py` reads the anomaly chain from a JSON spec, written the way a detector would see the chain. Keep it next to the generator's working files (not inside the generator directory) and update it whenever the chain changes.
+`scripts/chain_check.py` (plugin root) reads the anomaly chain from a JSON spec, written the way a detector would see the chain: `.content-design/<name>/chain.json`, updated whenever the chain changes.
 
 ```json
 {
@@ -37,3 +37,13 @@ Conditions: `{"path": p, "values": [...]}` or `{"path": p, "regex": r}` - a list
 
 - A chain is counted with every candidate binding kept alive: a row that advances one partial match does not consume it, partial matches expire `within` seconds after their first step, and a row counts once however many partial matches it completes. This is the strictest count - if background can form the chain in any combination of its rows, it shows.
 - `accept` also counts, per background capture, the rows matching each step (`step_hits`, every step must be > 0) and checks that every chain key that completed a chain in an anomaly capture also occurs in each background capture (`missing_chain_keys`). When the key is a random identifier (a session, an incident), keys never repeat; check actor and actor-pair presence separately.
+
+## Commands
+
+```bash
+python <plugin root>/scripts/chain_check.py count  chain.json CAPTURE...          # chains, start times, gaps, spans
+python <plugin root>/scripts/chain_check.py accept chain.json --off OFF... --on ON...  # exit 1 on any miss
+python <plugin root>/scripts/chain_check.py digest <generator dir>             # hash of the generator files
+```
+
+Captures may be `.jsonl` or `.jsonl.gz`.

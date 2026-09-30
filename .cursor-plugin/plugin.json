@@ -15,5 +15,6 @@
     "siem",
     "detection-engineering"
   ],
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks-cursor.json"
 }

@@ -4,7 +4,11 @@ The plugin `content-design` in the marketplace `eventum-ai-plugins` holds skills
 
 ## Layout
 
-A skill lives in `skills/<name>/SKILL.md`; next to it `references/` (facts), `scripts/` (Python) and `assets/` (skeletons). The adapters `.claude-plugin/`, `.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json`, `.agents/plugins/marketplace.json` and `.opencode/plugins/content-design.js` load `skills/` as a whole; a new skill needs no registration. The only automatic check is `scripts/check-no-version.sh`: a `version` field in a manifest freezes updates for users.
+A skill lives in `skills/<name>/SKILL.md`; next to it `references/` (facts), `scripts/` (Python) and `assets/` (skeletons). The adapters `.claude-plugin/`, `.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json`, `.agents/plugins/marketplace.json` and `.opencode/plugins/content-design.js` load `skills/` as a whole; a new skill needs no registration.
+
+- `skills/using-content-design/references/orientation.md` is injected at session start (`hooks/` for Claude Code and Cursor, the OpenCode adapter; Codex loads the `using-content-design` skill). It maps stages to skills; a new stage skill is added there.
+- Skills of one pipeline: `research-source` → `create-generator` → `review-generator` → `publish-generator`. They exchange files in `.content-design/<name>/` and reference each other's `references/` by relative path instead of duplicating them.
+- `scripts/chain_check.py` is the shared chain checker (skills call it as `<skill dir>/../../scripts/chain_check.py`); `scripts/check-no-version.sh` is the repository check: a `version` field in a manifest freezes updates for users.
 
 ## Skill structure
 

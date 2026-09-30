@@ -13,13 +13,18 @@ Commands:
         0 chains in every background capture, every chain step and
         every chain key of the anomaly captures present in each
         background capture. Exit status 1 on any miss.
+    chain_check.py digest GENERATOR_DIR
+        SHA-256 over the generator's files (output/ excluded), to tie a
+        review to the exact files it covered.
 
 Standard library only; Python 3.9+.
 """
 
 import argparse
 import gzip
+import hashlib
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -309,6 +314,24 @@ def cmd_accept(args):
     return 1 if bad else 0
 
 
+def cmd_digest(args):
+    root = os.path.abspath(args.generator_dir)
+    files = []
+    for base, dirs, names in os.walk(root):
+        rel_base = os.path.relpath(base, root)
+        dirs[:] = sorted(d for d in dirs if not (
+            rel_base == '.' and d == 'output') and not d.startswith('.'))
+        files.extend(os.path.normpath(os.path.join(rel_base, n))
+                     for n in names if not n.startswith('.'))
+    h = hashlib.sha256()
+    for rel in sorted(f.replace(os.sep, '/') for f in files):
+        h.update(rel.encode('utf-8') + b'\0')
+        with open(os.path.join(root, rel), 'rb') as fh:
+            h.update(hashlib.sha256(fh.read()).digest())
+    print(h.hexdigest())
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -319,8 +342,12 @@ def main():
     a.add_argument('spec')
     a.add_argument('--off', nargs='+', required=True)
     a.add_argument('--on', nargs='+', required=True)
+    d = sub.add_parser('digest', help='hash of the generator files')
+    d.add_argument('generator_dir')
     args = ap.parse_args()
-    sys.exit(cmd_count(args) if args.cmd == 'count' else cmd_accept(args))
+    handlers = {'count': cmd_count, 'accept': cmd_accept,
+                'digest': cmd_digest}
+    sys.exit(handlers[args.cmd](args))
 
 
 if __name__ == '__main__':
