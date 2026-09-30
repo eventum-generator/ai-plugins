@@ -1,6 +1,6 @@
 # Eventum content design
 
-Eventum (eventum.run, CLI `eventum`, package `eventum-generator`) streams events from a **generator**: a directory with `generator.yml`, Jinja templates and sample data. Content design is building generators whose output passes for a real log source: the native format, a normal day of activity and, when the source suits one, recurring episodes of an **anomaly chain** - an ordered sequence of records a detection rule should fire on.
+Eventum (eventum.run, CLI `eventum`, package `eventum-generator`) streams events from a **generator**: a directory with `generator.yml`, Jinja templates and sample data. Content design is building generators whose output passes for a real log source: the native format, ordinary activity with realistic volume and rhythm and, when the source suits one, recurring episodes of an **anomaly chain** - an ordered sequence of records a detection rule should fire on.
 
 ## Skills
 

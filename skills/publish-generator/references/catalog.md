@@ -18,7 +18,7 @@
 - Registration: import the constant in `lib/hub-data/index.ts` and add it to the exported array. A card that is not registered is not shown.
 - `category` is a `CategoryId` from `lib/hub-categories.ts` - Hub categories differ from slug prefixes; use an existing one.
 - `generationModes: ['background', 'anomaly']` and `anomalyChain` (a short description) when the type has them.
-- `eventFormat` is the structure of the generated event (`'ECS JSON'` or `'JSON'`); `originalFormat` is the format of the native record in `event.original` (`'Syslog'`, `'CEF'`, `'KV'`, `'XML'`, `'CSV'`, `'JSON'`, `'Plain text'`), omitted when the event carries none. The allowed values are the `EventFormat` and `OriginalFormat` types in `lib/hub-types.ts`.
+- `eventFormat` is the structure of the generated event (`'ECS JSON'` or `'JSON'`); `originalFormat` is the format of the native record in `event.original` (`'Syslog'`, `'CEF'`, `'KV'`, `'XML'`, `'CSV'`, `'JSON'`, `'Plain text'`), omitted when the event carries none. The allowed values are the `EventFormat` and `OriginalFormat` types in `lib/hub-types.ts`; when the generator's output shape has no matching value (native lines without a JSON envelope), tell the user before writing the card, since adding a value changes the Hub itself.
 - Style: the neighbouring cards in `lib/hub-data/generators/`; a sample containing hard-coded addresses keeps the file-level `sonarjs/no-hardcoded-ip` disable comment other cards use.
 - Checks: `pnpm install` once, then `npx prettier --write <card>`, `npx eslint --max-warnings 0 <card>`, `pnpm build`.
 

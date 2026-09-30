@@ -1,6 +1,6 @@
 ---
 name: review-generator
-description: Use to accept or check an Eventum generator - "review this generator", "is this pack ready", "check the generator after the fixes", "review the content-pack PR". Runs an independent review on fresh output against the acceptance criteria and writes a verdict with findings by severity. Must run in a context that did not build the generator. Not for building or fixing a generator (create-generator).
+description: Use to accept or check an Eventum generator - "review this generator", "is this pack ready", "check the generator after the fixes", "review the content-pack PR". Not for building or fixing a generator (create-generator).
 ---
 
 # Review an Eventum generator
@@ -32,7 +32,7 @@ An independent acceptance review: fresh captures, measured against the acceptanc
 
 ## Result
 
-- CLEAR: LOW findings are fixed in the README by the author and the generator can be published (`publish-generator`); fixes limited to the README do not need a new review.
+- CLEAR: the author fixes LOW findings or describes them in the README, and the generator can be published (`publish-generator`); fixes limited to the README do not need a new review.
 - NOT CLEAR: the author fixes the generator (`create-generator`), and a new review runs on the new files.
 
 ## Rules

@@ -1,6 +1,6 @@
 ---
 name: publish-generator
-description: Use only when the user asks to share or submit an Eventum generator to the official catalog or the Eventum Hub - "publish this generator", "submit it to content-packs", "add the Hub card", "open the PRs for the pack". Checks the review verdict, opens the content-packs pull request and the Hub card pull request in the docs repository. Not for building or reviewing a generator.
+description: Use only when the user asks to share or submit an Eventum generator to the official catalog or the Eventum Hub - "publish this generator", "submit it to content-packs", "add the Hub card", "open the PRs for the pack". Not for building or reviewing a generator.
 ---
 
 # Publish a generator
@@ -19,7 +19,7 @@ Submits a reviewed generator to `github.com/eventum-generator/content-packs` and
 
 ## Process
 
-1. **Catalog fit** - the slug is unique in `generators/` of the current `master` and in open PRs; the directory holds only generator files; the shipped `generator.yml` writes to a local file and runs without parameters or secrets; the README has every section `create-generator` requires. Fix what does not fit and re-run the digest check.
+1. **Catalog fit** - the slug is unique in `generators/` of the current `master` and in open PRs; the directory holds only generator files; the shipped `generator.yml` writes to a local file and runs without parameters or secrets; the README has every section of `../create-generator/references/generator-rules.md`. Fix what does not fit and re-run the digest check.
 2. **content-packs PR** - branch `feat/<slug>` from the current `master`, add `generators/<slug>/` only, commit, push, open the PR to `master` with the body from `references/catalog.md`.
 3. **Hub card** - in a docs checkout on a branch from the current `master`: write the card from the README, register it, run prettier, eslint and `pnpm build`; open the PR to `master` and link the content-packs PR in its body.
 4. **Report** both PR URLs.
