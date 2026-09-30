@@ -72,5 +72,7 @@ Criteria 1, 8, 9, 10, 14, 16 and 17 need reading: the sample record against the 
 - A guard that leaves many sequences one step short of the chain, or stays armed after an episode and changes the actor's next ordinary action.
 - An episode that pushes a live-object count past the background maximum or leaves an object open.
 - Episode starts pinned to one clock hour, stuck at night after a night first start, or skipped when no actor is free.
-- A parameter check that logs an error on every timestamp instead of stopping once.
+- A parameter check that logs an error on every timestamp instead of stopping once, or that passes a value (a regex-valid but impossible subnet) which a later call rejects.
+- A linking value (a token, a session) that ties steps together only in episodes: background creates and revokes, or opens and closes, different objects.
+- A carrier that emits one record per tick, spreading records due in the same second over several seconds.
 - FSM conditions on keys not yet set ("Comparing with None" warnings); `loop.index0` in a filtered loop; `rand.chance(15)` instead of `0.15`; datetimes without an offset; `rand.network.ip_v4_public()` for "fake" addresses.

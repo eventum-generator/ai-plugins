@@ -26,7 +26,7 @@
 ## Parameters
 
 - `event.template.params`: with a chain, `anomaly_mode: true` and `anomaly_interval_hours: 24` first; then the values users edit (host names, versions, domains). Names say the unit (`_hours`, `_count`).
-- The template validates every parameter and sample on the first render and stops on the first violation with one readable ERROR line:
+- The template validates every parameter and sample on the first render, with the operation that will use the value (`module.ipaddress.ip_network`, a parse, a lookup) rather than a pattern, and stops on the first violation with one readable ERROR line:
 
   ```jinja
   {%- if shared.get('invalid') -%}{%- do dispatch.exhaust() -%}{%- endif -%}
