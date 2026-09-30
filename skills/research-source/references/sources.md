@@ -4,7 +4,12 @@ In order of authority. Record the URL and the product version for every fact.
 
 ## Primary
 
-- **Vendor log reference** of the chosen version: event or message catalog, syslog/CEF/LEEF/JSON format guide, field descriptions, audit settings that control what is logged. Version-specific pages beat "latest".
+- **Vendor documentation** of the chosen version. The log part goes by names such as log message reference, syslog or CEF/LEEF guide, event or audit reference, field dictionary, and is often a separate document per release. Version-specific pages beat "latest". Read:
+  - the event or message catalog and the format guide: every class, its severity, its fields;
+  - field descriptions with their value lists, units and formats;
+  - status, reason and error code tables;
+  - the logging and audit settings that decide what is written and their defaults;
+  - the administration chapters on the processes that emit events (authentication, sessions, connections, policy evaluation, scheduled jobs, error handling): which events one action writes, in what order, and what links them.
 - **Raw records from maintained integrations.** Elastic: `github.com/elastic/integrations`, `packages/<package>/data_stream/<stream>/`:
   - `_dev/test/pipeline/test-*.log` (or `.json`) - raw input lines as the source emits them; `*-expected.json` - the parsed result;
   - `sample_event.json` - one parsed event in the integration's ECS shape;
