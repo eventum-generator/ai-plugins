@@ -8,7 +8,7 @@
 - `<category>` is one already used in `generators/` when one fits.
 - Nothing else is registered: `config/startup.yml` stays as it is.
 - One generator per pull request; branch `feat/<slug>`; commit and PR title `feat: add <Display Name> generator (<slug>)`.
-- The PR body: what the source is and the output shape; event types with shares; the anomaly chain and recurrence; validation from the review (verdict, chains per mode, recurrence gaps, one record per timestamp); limits.
+- The PR body: what the source is and the output shape; event types with shares; the anomaly chain and recurrence, when there is one; validation from the review (verdict, one record per timestamp, and with a chain the chains per mode and recurrence gaps); limits.
 
 ## Hub card (docs)
 

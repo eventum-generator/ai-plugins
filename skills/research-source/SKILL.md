@@ -24,7 +24,7 @@ Establishes, from primary sources, everything a generator needs to imitate one l
 2. **Read the vendor documentation** - find the official documentation of the chosen version (`references/sources.md` names what to look for) and read in full every part that governs the stream, not only the field tables. It is the basis for field meanings, value domains, which events one action writes and in what order, and which values change together. Integration fixtures and datasets supply raw records and fill what the documentation leaves out; they do not replace it.
 3. **Collect records** - for every event class the stream emits, a complete raw record of the chosen version, saved verbatim under `reference/`. An integration's test fixtures are the fastest complete source.
 4. **Fill the brief** section by section. Frequencies, volumes and timing come from documentation or datasets where they exist; otherwise they are marked synthetic with the reason.
-5. **Chain candidates** - build them only from documented records and from ordinary activity the source really produces, so that every step also occurs outside the chain.
+5. **Chain candidates** - when the source records activity a detection rule targets, build them only from documented records and from ordinary activity the source really produces, so that every step also occurs outside the chain.
 6. **Hand over** - show the user the event classes, the recommended chain, and the gaps; with their agreement continue with `create-generator`.
 
 ## Rules

@@ -57,7 +57,7 @@ Every input accepts `tags: [..]`. Timestamps of all inputs are merged in time or
 - Relative: `[+|-]<n>d<n>h<n>m<n>s`, e.g. `+1d12h`, `-30m` (relative to now; oscillator `end` is relative to its `start`).
 - A time of day (`"08:00:00"`) = today at that time; human phrases (`"tomorrow 9am"`) are parsed by dateparser.
 
-### time_patterns (the default input)
+### time_patterns
 
 ```yaml
 - time_patterns:
@@ -186,7 +186,6 @@ samples:
 | `dispatch.next(max_repicks=64)` | Discard output, pick templates again for the same timestamp; more than `max_repicks` repicks is an error. |
 | `dispatch.exhaust()` | Stop the event stage (end of data). |
 
-Generators do not shape the rate with `drop`/`next`: every input timestamp yields an event.
 
 ### module
 

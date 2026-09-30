@@ -10,22 +10,23 @@ An independent acceptance review: fresh captures, measured against the acceptanc
 ## Before starting
 
 - Run in a context that did not build the generator (a subagent or a new session); the author's notes are claims to verify, not evidence.
-- Inputs: the generator directory; `.content-design/<name>/brief.md` and `reference/` for the native format when they exist (otherwise the README's references); `chain.json` when it exists (otherwise write the spec from the README's `## Anomaly Chain`).
+- Inputs: the generator directory; `.content-design/<name>/brief.md` and `reference/` for the native format when they exist (otherwise the README's references); with a chain, `chain.json` when it exists (otherwise write the spec from the README's `## Anomaly Chain`).
 - `eventum --version` works. Captures go to `.content-design/<name>/captures/review/`.
 
 ## References
 
-- `references/acceptance.md` - criteria, severities, defects that most often slip through.
+- `references/acceptance.md` - criteria, severities, the capture protocol, defects that most often slip through.
 - `../create-generator/references/eventum-api.md` - the Eventum API, to judge template and input logic.
+- `../create-generator/references/anomaly-chain.md` - the chain design rules the chain criteria refer to.
 - `../create-generator/references/chain-spec.md` - the chain spec format.
 - `scripts/chain_check.py` at the plugin root (`<skill dir>/../../scripts/`).
 
 ## Process
 
 1. **Record the files** - `python <chain_check.py> digest <generator dir>`.
-2. **Read** `generator.yml`, templates, samples and patterns against the criteria: format against the reference records, rate and hours, guard and episode logic, state bounds, parameter validation. Note what each capture must confirm.
-3. **Capture** - test copies as in `create-generator` phase 3 (patterns started at a midnight with an explicit offset, finite `end`): 3 with `anomaly_mode: false` and 3 with `true` at the default interval, 4 days each, plus one `true` at a 6- or 8-hour interval; 14 days where a check needs more episodes. Every run exits 0 with an empty `-vvv` log.
-4. **Measure** each criterion: `chain_check.py accept` and `count`; presence of every chain actor and actor pair in each background capture; recurrence gaps and start hours; one record per timestamp; the episode actor before and after episodes against the same hours on ordinary days; caps and live-object counts per mode; guard actions per mode; state growth over 14 days; a 90-second live run on a copy with scaled-up rates; every README number and command.
+2. **Read** `generator.yml`, templates, samples and inputs against the criteria: format against the reference records, rate and rhythm, state bounds, parameter validation, and with a chain the guard and episode logic. Note what each capture must confirm.
+3. **Capture** - the review set of the capture protocol in `references/acceptance.md`; 14-day chain runs where a check needs more episodes.
+4. **Measure** each criterion as `references/acceptance.md` describes, and every README number and command.
 5. **Classify** each failure by `references/acceptance.md`; a finding states the criterion, the evidence (numbers, file and line), and why it matters to a consumer of the data.
 6. **Write** `.content-design/<name>/review.md`: digest, date, Eventum version, verdict (CLEAR when no MEDIUM or HIGH, otherwise NOT CLEAR), findings by severity, the measured numbers behind the passed criteria. Delete captures.
 
@@ -38,4 +39,4 @@ An independent acceptance review: fresh captures, measured against the acceptanc
 
 - Every finding rests on a measurement or a cited line; no finding from impression.
 - The review measures the files it records; a changed file invalidates the verdict.
-- Background tuned only to hide a number is itself a finding under criterion 6.
+- Background tuned only to hide a number is itself a finding under criterion 5.

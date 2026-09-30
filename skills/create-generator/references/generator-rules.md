@@ -19,7 +19,7 @@
 ## Parameters
 
 - Top-level `${params.*}` / `${secrets.*}` placeholders only for values users must override (hosts, URLs, tokens, credentials); secrets come from the Eventum keyring.
-- `event.template.params` hold values users may edit in the file (host names, versions, `anomaly_mode`, `anomaly_interval_hours`); the template validates their ranges.
+- `event.template.params` hold values users may edit in the file (host names, versions, and with a chain `anomaly_mode` and `anomaly_interval_hours`); the template validates their ranges.
 
 ## Samples
 
@@ -31,9 +31,9 @@
 - **Multi-source** (workstation agents, auditd, EDR, web access, fleets): a pool of dozens of instances; correlations (session, process tree, sequence numbers) live per instance.
 - **Single-source** (firewall, DNS, load balancer, proxy, broker): usually one instance; correlations (flow, session, source/destination pair) span the traffic through it.
 
-## ECS output
+## Output shape
 
-When the output is event-like, it follows ECS; if an Elastic integration exists for the source, mirror its `sample_event.json`, otherwise infer a reasonable ECS shape. Non-event payloads (API responses) keep their native format.
+Native records are written as the source writes them, with the `plain` formatter (`json` when the native record is JSON). ECS JSON mirrors the `sample_event.json` of the source's Elastic integration when one exists, otherwise a reasonable inferred ECS shape:
 
 - Top level: `@timestamp`, `ecs.version`, `event.*`, `host.*`, `agent.*`; source-specific data under its namespace (`winlog.*`, `auditd.*`, `nginx.*`).
 - The native raw line or record goes to `event.original`.
@@ -45,7 +45,7 @@ When the output is event-like, it follows ECS; if an Elastic integration exists 
 - Name templates after what they produce (`syscall-execve.json.jinja`), or `event.json.jinja` for one template; aliases under `templates:` are descriptive (`access_success`).
 - Macro imports include the `templates/` prefix: `{% from 'templates/_base.json.jinja' import render with context %}`.
 - Build the event as a dict and emit it with `{{ event | tojson }}`; never wrap `tojson` output in quotes.
-- State scopes: `shared` for correlation across templates, `locals` for one template, `globals` only across generators. Every container is capped.
+- State scopes: `shared` for correlation across templates, `locals` for one template, `globals` only across generators.
 
 ## Speed
 
@@ -68,13 +68,13 @@ Sections, all written for the consumer of the data:
 
 - Title and a one-line description of the source and format.
 - Event types - a table of type, share, category.
-- Volume and hours - records per day, hourly curve, populations.
-- `## Anomaly Chain` - sequence, linking fields, recurrence, variation, what background contains, detection idea.
-- Parameters - Event Parameters (`event.template.params` with defaults and ranges; which sample and pattern files to edit) and Output Parameters (top-level placeholders as an override pattern).
-- Usage - live command; how to run a finite batch window.
+- Volume and rhythm - records per day, hourly curve or schedule, populations.
+- `## Anomaly Chain`, with a chain - sequence, linking fields, recurrence (interval from the actual start, window, start hours, behaviour at short intervals), variation, what background contains of the chain, detection idea, and that each episode adds its own records (chain-part counts about one per episode higher).
+- Parameters - Event Parameters (`event.template.params` with defaults and ranges; the sample files users edit for their own actors and hosts, and the input settings or pattern files that set volume and hours) and Output Parameters (top-level placeholders as an override pattern).
+- Usage - live command; how to run a finite batch window. Every command runs as written.
 - Performance - one line with generation speed.
-- Sample output - one complete event copied byte for byte from a generated file.
+- Sample output - one complete event copied byte for byte, escapes kept, from a capture of the default configuration.
 - Limitations - only how the data differs from the real source (missing event types or fields, inferred values, synthetic rates, timing such as "related records are seconds apart, not milliseconds").
 - References - vendor documentation and the matching Elastic integration.
 
-The README never describes the generator's mechanism (inputs, ticks, queues, template state, guards) or the validation process (captures, test runs, review rounds). Numbers in it are measured on generated output.
+The README never describes the generator's mechanism (inputs, ticks, queues, template state, guards) or the validation process (captures, test runs, review rounds). Every number in it is measured on generated output of the default configuration, and a range covers every capture.

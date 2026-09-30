@@ -10,6 +10,6 @@
 6. **Entities** - who and what emits or appears (hosts, users, services, clients), single-source or multi-source, identifier formats (GUID layouts, session IDs, counters), realistic population sizes.
 7. **Volume and rhythm** - typical records per entity and per day, hourly and weekly pattern, bursts, what runs on schedules.
 8. **Limits and invariants** - lockout thresholds, session caps, rate limits, monotonic counters, uniqueness rules, lifecycles that open and close (session, object, lease).
-9. **Anomaly chain candidates** - 1-3 ordered sequences of documented records a detection rule fires on: steps, linking fields, time window, which ordinary activity produces each step on its own, detection idea. Mark the recommended one.
+9. **Anomaly chain candidates** - when the source records activity a detection rule targets: 1-3 ordered sequences of documented records a rule fires on, with steps, linking fields, time window, which ordinary activity produces each step on its own, and detection idea; the recommended one marked. Otherwise "none" with the reason.
 10. **Gaps and inferences** - what could not be confirmed, what is inferred and from what.
 11. **References** - numbered list: URL, title, version, date read.
