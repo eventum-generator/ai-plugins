@@ -1,4 +1,4 @@
-# <img src="assets/eventum-logo.svg" alt="" width="40" align="absmiddle"> Eventum AI Plugins
+# AI Plugins
 
 Plugins that teach AI coding agents to work with [Eventum](https://eventum.run), the synthetic event generator. The repository is both the plugin and its marketplace, and supports Claude Code, Codex, Cursor and OpenCode.
 
