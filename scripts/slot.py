@@ -261,17 +261,17 @@ def _kill_tree(proc):
 
 def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
         stdout=None, stderr=None):
-    """Run cmd under a lease; dict with exit, reason, wall_s, peak_mb."""
+    """Run cmd under a lease: exit, reason, wall_s, peak_mb, rss_mb series."""
     lease = acquire(mem_mb, pools, wait, label=' '.join(cmd)[:200])
     if lease is None:
-        return {'exit': 75, 'reason': 'no-slot', 'wall_s': 0.0, 'peak_mb': None}
+        return {'exit': 75, 'reason': 'no-slot', 'wall_s': 0.0, 'peak_mb': None, 'rss_mb': []}
     start = time.monotonic()
     kwargs = {'cwd': cwd, 'stdout': stdout, 'stderr': stderr}
     if WINDOWS:
         kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         kwargs['start_new_session'] = True
-    reason, peak = 'exit', None
+    reason, peak, series = 'exit', None, []
     proc = None
     try:
         proc = subprocess.Popen(cmd, **kwargs)
@@ -287,6 +287,7 @@ def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
                 rss = _tree_rss_mb(proc.pid)
                 if rss is not None:
                     peak = rss if peak is None else max(peak, rss)
+                    series.append((round(time.monotonic() - start, 1), round(rss)))
                     if limit and rss > limit:
                         reason = 'memory'
                         _kill_tree(proc)
@@ -303,9 +304,11 @@ def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
     finally:
         lease.release()
     code = {'timeout': 124, 'memory': 137}.get(reason, proc.returncode)
+    step = max(1, len(series) // 40)
     return {'exit': code, 'reason': reason,
             'wall_s': round(time.monotonic() - start, 2),
-            'peak_mb': None if peak is None else round(peak)}
+            'peak_mb': None if peak is None else round(peak),
+            'rss_mb': [list(x) for x in series[::step]]}
 
 
 def _on_signal(signum, _frame):
