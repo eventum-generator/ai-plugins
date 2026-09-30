@@ -11,14 +11,16 @@ The skills form one pipeline, from a log source to a generator in the official c
 | Skill | Stage |
 |---|---|
 | `research-source` | Establishes the native format, event catalog, fields, timing, limits and anomaly scenarios of a log source from primary sources and writes a source brief. |
-| `create-generator` | Designs and builds a generator from the brief or from the user's own format and samples: background traffic on a daily curve, recurring anomaly episodes, validation of the output, README. |
+| `create-generator` | Designs and builds a generator from the brief or from the user's own format and samples: ordinary activity with realistic volume and rhythm, recurring anomaly episodes when the source suits them, measured validation of the output, README. |
 | `review-generator` | Independent acceptance review of a generator on fresh output, with a verdict tied to the reviewed files. |
 | `publish-generator` | On request: submits a reviewed generator to [content-packs](https://github.com/eventum-generator/content-packs) and adds its card to the Eventum Hub. |
 | `using-content-design` | Loaded at session start: tells the agent which skill fits the task and in what order. |
 
 Start anywhere the material allows: with only a product name, with your own log samples, or with an existing generator to review. Publishing is optional.
 
-The skills need Eventum installed (`uv tool install eventum-generator` or `pip install eventum-generator`, Python 3.14+) and Python 3.9+ for their helper scripts.
+The skills need Eventum 2.8+ (`uv tool install eventum-generator` or `pip install eventum-generator`, Python 3.14+) and Python 3.9+ for their helper scripts.
+
+Many generators can be built at once, one agent or subagent each: the helper scripts run every Eventum process, docs build and git operation on a shared clone under host-wide slots, so parallel work stays within the machine's memory (half of it by default, `CONTENT_DESIGN_MEM_MB` to change). Agents report friction with the skills as issues labelled `agent-feedback`, when you allow them to.
 
 ## Installation
 
@@ -82,7 +84,7 @@ The plugin version is the commit SHA: every merge into `master` is a release for
 .claude-plugin/  .codex-plugin/  .cursor-plugin/  .opencode/  .agents/plugins/   harness adapters
 assets/          plugin assets
 hooks/           session-start orientation for Claude Code and Cursor
-scripts/         chain checker shared by the skills, repository checks
+scripts/         capture.py, measure.py, slot.py shared by the skills; tests; repository checks
 skills/          skills: SKILL.md, references/
 ```
 
