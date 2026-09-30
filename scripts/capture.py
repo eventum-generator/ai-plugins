@@ -82,6 +82,20 @@ def parse_iso(value):
     return d if d.tzinfo else None
 
 
+def parse_anchor(value, ref):
+    """An oscillator anchor: ISO with offset, or a time of day (today in UTC, as
+    Eventum reads it with --timezone UTC) placed on the date of `ref`."""
+    d = parse_iso(value)
+    if d is not None:
+        return d
+    m = re.fullmatch(r'\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*', str(value)) if value is not None else None
+    if not m:
+        return None
+    base = ref.astimezone(timezone.utc)
+    return base.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=int(m.group(3) or 0),
+                        microsecond=0)
+
+
 def iso(d):
     return d.isoformat()
 
@@ -191,7 +205,7 @@ def dump(path, obj):
 
 def aligned_start(anchor, period_s, window):
     """Last phase point of the oscillator at or before the window start."""
-    a = parse_iso(anchor)
+    a = parse_anchor(anchor, window)
     if a is None or period_s <= 0:
         return window
     k = math.floor((window - a).total_seconds() / period_s)
@@ -211,13 +225,13 @@ def spread_pdf(dist, prm, x):
     return 2 * (right - x) / ((right - left) * (right - mode)) if right > mode else 0.0
 
 
-def busiest_hour(patterns):
+def busiest_hour(patterns, ref=None):
     """(UTC hour of the week with the most timestamps, timestamps per hour then)
     across uniform and triangular daily and weekly patterns, or (None, 0)."""
     density = [0.0] * 168
     for pat in patterns.values():
         osc, spread = pat.get('oscillator') or {}, pat.get('spreader') or {}
-        a = parse_iso(osc.get('start'))
+        a = parse_anchor(osc.get('start'), ref or datetime.now(timezone.utc))
         period_h = float(osc.get('period', 1)) * UNIT_SECONDS.get(osc.get('unit', 'days'), 0) / 3600
         dist = spread.get('distribution', 'uniform')
         if a is None or period_h not in (24, 168) or dist not in ('uniform', 'triangular'):
@@ -234,9 +248,9 @@ def busiest_hour(patterns):
     return peak, density[peak]
 
 
-def live_plan(gen_dir, cfg, patterns, window, seconds, carrier=(), target=40):
-    """Shift putting the busiest hour at `window` and the rate scale that gives
-    about `target` non-carrier records in `seconds`; notes."""
+def live_plan(gen_dir, cfg, patterns, window, seconds, carrier=(), target=80):
+    """The busiest UTC hour of the week, the rate scale that gives about
+    `target` non-carrier records in `seconds`, notes."""
     own = {}
     for item in cfg.get('input') or []:
         (plugin, conf), = item.items()
@@ -245,19 +259,17 @@ def live_plan(gen_dir, cfg, patterns, window, seconds, carrier=(), target=40):
             for rel in conf.get('patterns') or []:
                 path = (gen_dir / rel).resolve()
                 own[path] = patterns[path]
-    peak, per_hour = busiest_hour(own)
-    notes, shift = [], None
+    peak, per_hour = busiest_hour(own, window)
+    notes = []
     if peak is not None:
-        w = window.astimezone(timezone.utc)
-        shift = timedelta(hours=w.weekday() * 24 + w.hour - peak)
         notes.append('curves shifted so that the busiest hour (weekday %d, %02d:00 UTC) runs now'
                      % (peak // 24, peak % 24))
     expected = per_hour / 3600.0 * seconds
     scale = min(1000, max(20, math.ceil(target / expected))) if expected > 0 else 20
-    return shift, scale, notes
+    return peak, scale, notes
 
 
-def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False, shift=None):
+def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False, shift=None, move=True):
     """Bound every input of a loaded config in place; notes of what changed.
 
     `patterns` maps pattern paths (resolved) to their loaded content and is
@@ -282,8 +294,11 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False, shift=None)
                     period = float(osc.get('period', 1)) * UNIT_SECONDS[osc.get('unit', 'days')]
                     osc['start'] = iso(aligned_start(osc['start'], period, window))
                     osc['end'] = iso(end)
-                elif shift is not None and parse_iso(osc['start']) is not None:
-                    osc['start'] = iso(parse_iso(osc['start']) + shift)
+                elif shift is not None:
+                    period_h = float(osc.get('period', 1)) * UNIT_SECONDS[osc.get('unit', 'days')] / 3600
+                    if period_h in (24, 168):  # anchor in the past, busiest phase now
+                        now_hour = window.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+                        osc['start'] = iso(now_hour - timedelta(hours=shift % period_h))
                 if scale != 1:
                     pat['multiplier']['ratio'] = max(1, int(round(pat['multiplier']['ratio'] * scale)))
         elif plugin == 'cron':
@@ -293,7 +308,7 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False, shift=None)
                         raise CaptureError('cron input: %s must be set explicitly' % key)
                 conf['start'] = iso(window)
                 conf['end'] = iso(end - timedelta(seconds=1))
-            elif not every_minute(conf['expression']):
+            elif move and not every_minute(conf['expression']):
                 notes.append('schedule %s replaced by %s for the live check' % (conf['expression'], LIVE_CRON))
                 conf['expression'] = LIVE_CRON
             elif scale != 1:
@@ -342,7 +357,20 @@ def set_mode(cfg, mode, interval):
     if interval is not None:
         if 'anomaly_interval_hours' not in params:
             raise CaptureError('no anomaly_interval_hours parameter')
-        params['anomaly_interval_hours'] = interval
+        params['anomaly_interval_hours'] = int(interval) if float(interval).is_integer() else interval
+
+
+def set_params(cfg, pairs):
+    """KEY=VALUE overrides of event.template.params (VALUE parsed as JSON when it can be)."""
+    params = cfg['event']['template'].setdefault('params', {})
+    for pair in pairs or ():
+        key, _, raw = pair.partition('=')
+        if not key or not _:
+            raise CaptureError('--param needs KEY=VALUE: %s' % pair)
+        try:
+            params[key] = json.loads(raw)
+        except ValueError:
+            params[key] = raw
 
 
 def file_output(cfg, path):
@@ -357,7 +385,7 @@ def file_output(cfg, path):
 
 
 def prepare(src, dst, py, window, days, mode='as-is', interval=None, scale=1, live=False,
-            seconds=90, carrier=()):
+            seconds=90, carrier=(), params=(), plan=True):
     """Copy the generator to dst and bound it; (generator.yml path, config, notes)."""
     src = Path(src).resolve()
     if dst.exists():
@@ -376,12 +404,15 @@ def prepare(src, dst, py, window, days, mode='as-is', interval=None, scale=1, li
                 pat_paths.append(path)
     patterns = load_yaml(py, pat_paths) if pat_paths else {}
     shift, plan_notes = None, []
-    if live:
+    if live and plan:
         shift, auto, plan_notes = live_plan(dst, cfg, patterns, window, seconds, carrier)
         scale = auto if scale is None else scale
         plan_notes.append('rates scaled x%s' % scale)
-    notes = plan_notes + bound(dst, cfg, patterns, window, days, scale, live, shift)
+    elif live:
+        scale = 1
+    notes = plan_notes + bound(dst, cfg, patterns, window, days, scale, live, shift, move=plan)
     set_mode(cfg, mode, interval)
+    set_params(cfg, params)
     file_output(cfg, dst / 'output' / 'events.out')
     for path, pat in patterns.items():
         dump(path, pat)
@@ -409,13 +440,20 @@ def log_lines(path):
         return [ln.rstrip() for ln in fh if ln.strip()]
 
 
+ANSI = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
+
+
 def execute(eventum, cfg_path, run_id, out_dir, mem, timeout, live=False, seconds=None):
     log = out_dir / (run_id + '.log')
     cmd = [eventum, 'generate', '--path', str(cfg_path), '--id', run_id,
            '--live-mode', 'true' if live else 'false', '--keep-order', 'true', '-vvv']
     with open(log, 'w', encoding='utf-8') as fh:
         res = slot.run(cmd, mem_mb=mem, timeout=seconds if live else timeout,
-                       stdout=fh, stderr=subprocess.STDOUT, env=CHILD_ENV)
+                       stdout=fh, stderr=subprocess.STDOUT, env=CHILD_ENV,
+                       label='eventum %s (%s)' % (run_id, out_dir))
+    text_log = log.read_text(encoding='utf-8', errors='replace')
+    if '\x1b[' in text_log:  # Eventum colours its console log even into a file
+        log.write_text(ANSI.sub('', text_log), encoding='utf-8')
     res['log'] = str(log)
     res['log_lines'] = len(log_lines(log))
     return res
@@ -458,7 +496,8 @@ def one(args, name, kind, mode, interval, days, eventum, py, window, carrier=())
     rec = {'name': name, 'kind': kind, 'mode': mode, 'interval': interval, 'days': days,
            'window_start': iso(window), 'window_end': iso(window + timedelta(days=days))}
     try:
-        cfg_path, cfg, notes = prepare(args.generator, work, py, window, days, mode, interval)
+        cfg_path, cfg, notes = prepare(args.generator, work, py, window, days, mode, interval,
+                                       params=args.param)
         rec['notes'] = notes
         if kind == 'check':
             return check_pair(args, rec, cfg_path, cfg, work, eventum, py, window, days, mode, interval, carrier)
@@ -506,7 +545,8 @@ def check_pair(args, rec, cfg_path, cfg, work, eventum, py, window, days, mode, 
     rec['timestamps'] = total
     work2 = out / 'work' / (rec['name'] + '-replay')
     try:
-        cfg2_path, cfg2, _ = prepare(args.generator, work2, py, window, days, mode, interval)
+        cfg2_path, cfg2, _ = prepare(args.generator, work2, py, window, days, mode, interval,
+                                     params=args.param)
         replay_config(cfg2, groups, work2)
         dump(cfg2_path, cfg2)
         res2 = execute(eventum, cfg2_path, rec['name'] + '-replay', out, args.mem, args.timeout)
@@ -641,10 +681,20 @@ def cmd_live(args):
     work = out / 'work' / 'live'
     slot.cancel_on_signals()
     now = datetime.now(timezone.utc)
+    shipped = {}
+    try:  # the configuration as shipped runs live without errors (criterion 2)
+        cfg0, _, _ = prepare(args.generator, out / 'work' / 'live-shipped', py, now, 1, 'as-is', None,
+                             live=True, params=args.param, plan=False)
+        res0 = execute(eventum, cfg0, 'live-shipped', out, args.mem, None, live=True, seconds=20)
+        shipped = {'seconds': 20, 'log_lines': res0['log_lines'], 'stopped_by': res0['reason'],
+                   'exit': res0['exit'], 'log': res0['log']}
+    finally:
+        if not args.keep:
+            shutil.rmtree(out / 'work' / 'live-shipped', ignore_errors=True)
     try:
         cfg_path, _, notes = prepare(args.generator, work, py, now, 1, 'as-is', None,
                                      scale=args.scale, live=True, seconds=args.seconds,
-                                     carrier=args.carrier)
+                                     carrier=args.carrier, params=args.param)
         produced = work / 'output' / 'events.out'
         samples, stop = [], threading.Event()
 
@@ -699,8 +749,10 @@ def cmd_live(args):
         'future_records': sum(1 for x in lags if x < -1.0),
         'first_second': counts[0] if counts else 0, 'median_per_second': median,
         'log_lines': res['log_lines'], 'log': res['log'], 'peak_mb': res['peak_mb'],
-        'stopped_by': res['reason'], 'notes': notes, 'problems': [],
+        'stopped_by': res['reason'], 'notes': notes, 'shipped': shipped, 'problems': [],
     }
+    if shipped.get('log_lines') or shipped.get('stopped_by') != 'timeout':
+        report['problems'].append('the shipped configuration failed live: %s' % shipped)
     if res['log_lines']:
         report['problems'].append('log not empty')
     if order_breaks:
@@ -732,6 +784,8 @@ def main():
     common.add_argument('--mem', type=int, default=slot.DEFAULT_MEM_MB, help='MB per run')
     common.add_argument('--timeout', type=float, default=3600, help='seconds per run')
     common.add_argument('--keep', action='store_true', help='keep the working copies')
+    common.add_argument('--param', action='append', default=[],
+                        help='KEY=VALUE override of event.template.params (JSON value)')
     r = sub.add_parser('run', parents=[common], help='the protocol run set')
     r.add_argument('--set', choices=sorted(SETS), default='author')
     r.add_argument('--days', type=int, default=4)
@@ -748,7 +802,7 @@ def main():
     o.add_argument('--interval', type=float)
     lv = sub.add_parser('live', parents=[common], help='live-mode check')
     lv.add_argument('--seconds', type=float, default=90)
-    lv.add_argument('--scale', type=float, help='rate multiplier (default: enough for about 40 records)')
+    lv.add_argument('--scale', type=float, help='rate multiplier (default: aims at about 80 records)')
     lv.add_argument('--carrier', action='append', default=[], help='tag of a carrier input')
     lv.add_argument('--ts-path', default='@timestamp')
     args = ap.parse_args()

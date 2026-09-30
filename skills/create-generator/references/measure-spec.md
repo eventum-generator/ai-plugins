@@ -34,6 +34,7 @@
 | `groups` | Named conditions: populations, outcomes or anything with a share and an hourly curve to report. |
 | `actor` | Value spec of the entity an episode is attributed to: its presence in background and its activity around episodes are measured. |
 | `presence` | Named value specs of further entities an episode uses (`{"pair": {"paths": ["user.name", "source.ip"]}}`): each value episodes use is counted in every background capture. `actor` is included. |
+| `sequences` | Named timings `{"group": value spec, "from": condition, "to": condition}`: the delay from a `from` record to the next `to` record of the same group (a job's start to its report), reported as quantiles; they check the delays the brief states. |
 | `day_start_hour` | UTC hour at which a counted day starts (default 0); 12 keeps a night of scheduled jobs in one day. |
 | `chain` | The anomaly chain, when there is one (below). |
 

@@ -50,7 +50,8 @@ eventum generate --path <generator.yml> --id <id> [options]
 
 ### Logging
 
-- A normal run logs nothing at `-vvv`, batch or live.
+- A normal run logs nothing at `-vvv`, batch or live. The console log is coloured with ANSI codes even when redirected to a file.
+- Batch runs grow in memory with the number of timestamps, whatever the template does (a 14-day 1-second `cron` run: tens to hundreds of MB); live runs stay flat.
 - Template runtime error: ERROR with `reason`, `template_alias` and a traceback with the template line; that timestamp yields nothing and the run continues.
 - Format error: ERROR "Failed to format event" with `original_event`, once per event (*next release*: throttled to one line per 10 s with a count).
 - WARNING on FSM comparisons with a missing or `None` value (every check), on "Timestamps/Events queue is full" when live throughput falls behind, and on a `globals` lock left acquired.
@@ -239,4 +240,10 @@ samples:
 - Formatters (2.8.0): `plain` (the default: rendered text as is), `json`, `json-batch`, `template`, `template-batch` (`template` inline or `template_path`, rendering `event` / `events`), `eventum-http-input`. *Next release*: `syslog`, and `framing: octet_counting` for tcp.
 - `json` validates each event and normalises whitespace only: key order, number literals (`1.50` stays `1.50`) and string escapes are kept; output is one line with a space after `,` and `:`, so compact native JSON is not reproduced. `indent` defaults to 0. An event that is not valid JSON is logged and not written.
 - `file`: `path` (relative to the generator directory, parent directories created), `write_mode` (`append` default | `overwrite`), `encoding` (utf_8), `separator` (default the OS line separator: CRLF on Windows), `flush_interval` (1 s), `file_mode` (640).
-- Other outputs: `stdout` (`stream: stdout | stderr`), `tcp`, `udp`, `http`, `opensearch`, `clickhouse`, `kafka`.
+- Other outputs (fields; each with `formatter` unless noted):
+  - `stdout`: `stream` (stdout | stderr), `flush_interval`, `encoding`, `separator`; no formatter field.
+  - `opensearch`: `hosts` (list of URLs), `username`, `password`, `index` (all required), `verify` (true), `ca_cert`, `client_cert`, `client_cert_key`, `connect_timeout`, `request_timeout`, `proxy_url`.
+  - `http`: `url` (required), `method`, `success_code`, `headers`, `username`, `password`, `verify`, TLS and proxy fields, `concurrency`.
+  - `tcp`: `host`, `port`, `encoding`, `separator`, `ssl`, `verify`, TLS fields; `udp`: `host`, `port`, `encoding`, `separator`; neither has a formatter field.
+  - `kafka`: `bootstrap_servers`, `topic`, `key`, `acks`, `compression_type`, batching and SASL / SSL fields.
+  - `clickhouse`: `host`, `port`, `protocol`, `database`, `table`, `username`, `password` or `dsn`, TLS fields, `input_format`.

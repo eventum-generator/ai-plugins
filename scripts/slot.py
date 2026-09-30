@@ -304,9 +304,9 @@ def _kill_tree(proc):
 
 
 def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
-        stdout=None, stderr=None, env=None):
-    """Run cmd under a lease: exit, reason, wall_s, peak_mb, rss_mb series."""
-    lease = acquire(mem_mb, pools, wait, label=' '.join(cmd)[:200])
+        stdout=None, stderr=None, env=None, label=None):
+    """Run cmd under a lease: exit, reason, wall_s, peak_mb, cpu_s, rss_mb series."""
+    lease = acquire(mem_mb, pools, wait, label=label or ' '.join(cmd)[:200])
     if lease is None:
         reason = 'cancelled' if CANCEL.is_set() else 'no-slot'
         return {'exit': 130 if reason == 'cancelled' else 75, 'reason': reason,

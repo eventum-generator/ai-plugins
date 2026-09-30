@@ -66,6 +66,15 @@ class BoundTest(unittest.TestCase):
         self.assertLessEqual(start, W)
         self.assertLess((W - start).total_seconds(), 7 * 86400)
 
+    def test_time_of_day_anchor(self):
+        start = capture.aligned_start('00:00:00', 86400, W)
+        self.assertEqual(start, W)
+        peak, _ = capture.busiest_hour({'x': {
+            'oscillator': {'period': 1, 'unit': 'days', 'start': '00:00:00', 'end': 'never'},
+            'multiplier': {'ratio': 100},
+            'spreader': {'distribution': 'uniform', 'parameters': {'low': 0.5, 'high': 0.5417}}}}, W)
+        self.assertEqual(peak % 24, 12)
+
     def test_linspace_keeps_its_span(self):
         cfg, pats = config(), patterns(self.root)
         cfg['input'].append({'linspace': {'start': '2026-01-01T10:00:00Z', 'end': '2026-01-01T11:00:00Z', 'count': 60}})

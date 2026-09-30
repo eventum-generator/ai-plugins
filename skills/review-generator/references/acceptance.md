@@ -21,7 +21,7 @@ A generator is accepted when no finding is MEDIUM or HIGH. Each criterion names 
 | 7 | Live mode: records never ahead of the wall clock, in order, no catch-up burst, empty log. | MEDIUM |
 | 8 | Every template branch emits a record; every sample column read exists; every parameter and sample is validated with one readable error. | MEDIUM |
 | 9 | Samples are realistic but fake (documentation or private addresses, example domains, synthetic names). | HIGH if real data, else LOW |
-| 10 | The README follows the section order of `../../create-generator/references/generator-rules.md`, describes the generated data only, its sample is a byte-exact generated record, its commands run as written. | LOW; MEDIUM if a claim about behaviour is false |
+| 10 | The README follows the section order of `../../create-generator/references/generator-rules.md`, describes the generated data only, its sample is a generated record (the field set, formats and value domains of a fresh record of that class; captures are random, so bytes cannot be compared), its commands run as written. | LOW; MEDIUM if a claim about behaviour is false |
 | 11 | Every number in the README matches the measurement report (shares, per-day counts, ranges, spans, gaps, start hours). | LOW |
 
 With a chain:
@@ -48,15 +48,15 @@ With a chain:
 | Default configuration, 14 days: memory series, speed, volume | 1 | 1 | 4, 6, 11 |
 | The same 14 days with a trivial template: Eventum's own memory curve | 1 | 1 | 6 |
 | Timestamps only, then the same moments replayed through the templates, 2 days | 1 | 1 | 3 |
-| Live, 90 s: the busiest hour shifted to now, rates scaled to about 40 records, schedules moved into the window | 1 | 1 | 7 |
+| Live: the shipped configuration for 20 s, then 90 s with the busiest hour shifted to now, rates scaled to about 80 records and schedules moved into the window | 1 | 1 | 2, 7 |
 
-Four days hold four default-interval episodes; fourteen days make memory growth visible against Eventum's own; forty live records show lag, order and catch-up. Timestamps of carrier inputs are left out of the replay; whether a carrier emits exactly the due records is judged from the template.
+Four days hold four default-interval episodes; fourteen days make memory growth visible against Eventum's own; eighty live records show lag, order and catch-up. Timestamps of carrier inputs are left out of the replay; whether a carrier emits exactly the due records is judged from the template.
 
 ## Measurements
 
-`measure.py report <measure.json> <manifest.json>` gives every number, keyed by criterion (`2_runs`, `3_one_record_per_timestamp`, `4_5_profile` with per-day, per-weekday, class, group and hourly figures, `6_state`, `7_live`, `12_chains`, `13_presence`, `13_step_pairs_in_background`, `15_18_episodes_default`, `18_episodes_short` per interval, `speed` per CPU and wall second), and `flags`: measured facts that fail a criterion outright; it exits 1 while flags remain. Days and hours are UTC; records outside a run's window are counted, not measured. Each flag becomes a finding; the numbers without a flag are judged against the criteria:
+`measure.py report <measure.json> <manifest.json>` gives every number, keyed by criterion (`2_runs`, `3_one_record_per_timestamp`, `4_5_profile` of background and `11_profile_default` of the default configuration, each with per-day, per-weekday, class, group, hourly and sequence figures, `6_state`, `7_live`, `12_chains`, `13_presence`, `13_step_pairs_in_background`, `15_18_episodes_default`, `18_episodes_short` per interval, `speed` per CPU and wall second), and `flags`: measured facts that fail a criterion outright; it exits 1 while flags remain. Days and hours are UTC; records outside a run's window are counted, not measured. Each flag becomes a finding; the numbers without a flag are judged against the criteria:
 
-- 4, 5: class shares, group shares and hourly curves against the brief and the design.
+- 4, 5: class shares, group shares, hourly curves and sequence delays of background (`4_5_profile`, from the background runs) against the brief and the design; the README's figures come from the default configuration (`11_profile_default`).
 - 6: memory growth over the long run beyond the trivial-template baseline, above 10% and 50 MB between its second and last quarter.
 - 15: the actor's records in the 30 minutes before and after each episode against the same actor around ordinary background records of the chain's last step and at the same clock time on background days; with fewer than about five records per window the ratios carry no signal, and the criterion is judged from the templates.
 - 13: episode values of every `presence` spec in each background capture, and background occurrences of every linked pair of chain steps; a pair only episodes contain is flagged.

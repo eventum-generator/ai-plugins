@@ -188,6 +188,8 @@ class Spec:
             pres.setdefault('actor', raw['actor'])
         self.presence = {n: compile_value(v) for n, v in pres.items()}
         self.day_shift = float(raw.get('day_start_hour', 0)) * 3600
+        self.sequences = {n: (compile_value(v['group']), compile_cond(v['from']), compile_cond(v['to']))
+                          for n, v in (raw.get('sequences') or {}).items()}
         chain = raw.get('chain')
         self.chain = None
         if chain:
@@ -294,7 +296,10 @@ def scan(spec_raw, path, lo=None, hi=None):
         'groups': {g: {'records': 0, 'hours': [0] * 24} for g in spec.groups},
         'actors': {}, 'last_step': {}, 'chains': [], 'step_hits': [], 'keys': [],
         'presence': {n: {} for n in spec.presence},
+        'window': [lo, hi], 'day_shift': spec.day_shift,
+        'sequences': {n: [] for n in spec.sequences},
     }
+    pending = {n: {} for n in spec.sequences}
     chain = spec.chain
     state, keys, last_chain_end = {}, set(), {}
     if chain:
@@ -344,6 +349,14 @@ def scan(spec_raw, path, lo=None, hi=None):
             a = spec.actor(row)
             if a is not None:
                 actor_times.setdefault(a, []).append(t)
+            for n, (grp, first, then) in spec.sequences.items():
+                g = grp(row)
+                if g is None:
+                    continue
+                if then(row) and g in pending[n]:
+                    out['sequences'][n].append(t - pending[n].pop(g))
+                elif first(row):
+                    pending[n][g] = t
             k = chain_key(chain, row) if chain else None
             for n, get in spec.presence.items():
                 v = get(row)
@@ -422,9 +435,26 @@ def iso(t):
 
 
 def full_days(res):
-    """Per-day counts without the partial first and last day."""
+    """(day, count) of the days wholly inside the capture window (or all
+    days but the first and last when the window is unknown)."""
     days = sorted(res['days'].items())
-    return [n for _, n in days[1:-1]] if len(days) > 2 else [n for _, n in days]
+    lo, hi = res.get('window') or (None, None)
+    if lo is None or hi is None:
+        return days[1:-1] if len(days) > 2 else days
+    out = []
+    for day, n in days:
+        start = datetime.strptime(day, '%Y-%m-%d').replace(tzinfo=timezone.utc).timestamp() + res['day_shift']
+        if start >= lo and start + 86400 <= hi:
+            out.append((day, n))
+    return out
+
+
+def quantiles(values):
+    if not values:
+        return None
+    v = sorted(values)
+    pick = lambda q: round(v[min(len(v) - 1, int(q * len(v)))], 2)  # noqa: E731
+    return {'n': len(v), 'min': round(v[0], 2), 'p50': pick(0.5), 'p95': pick(0.95), 'max': round(v[-1], 2)}
 
 
 def profile(results, top=40):
@@ -432,7 +462,7 @@ def profile(results, top=40):
     classes, groups, hours = {}, {}, [0] * 24
     per_day, weekday = [], {}
     for r in results:
-        for day, n in sorted(r['days'].items())[1:-1]:
+        for day, n in full_days(r):
             weekday.setdefault(datetime.strptime(day, '%Y-%m-%d').strftime('%a'), []).append(n)
         for c, n in r['classes'].items():
             classes[c] = classes.get(c, 0) + n
@@ -441,7 +471,7 @@ def profile(results, top=40):
             acc['records'] += v['records']
             acc['hours'] = [a + b for a, b in zip(acc['hours'], v['hours'])]
         hours = [a + b for a, b in zip(hours, r['hours'])]
-        per_day += full_days(r)
+        per_day += [n for _, n in full_days(r)]
     ranked = sorted(classes.items(), key=lambda kv: -kv[1])
     shares = {c: round(100.0 * n / total, 2) for c, n in ranked[:top]}
     if len(ranked) > top:
@@ -461,6 +491,8 @@ def profile(results, top=40):
         'groups': {g: {'share_pct': round(100.0 * v['records'] / total, 2) if total else 0,
                        'hourly_pct_utc': curve(v['hours'])} for g, v in groups.items()},
         'outside_window': sum(r['outside_window'] for r in results),
+        'sequence_delays_s': {n: quantiles([d for r in results for d in r['sequences'].get(n, [])])
+                              for n in (results[0]['sequences'] if results else {})},
         'unparsed': sum(r['unparsed'] for r in results),
         'no_time': sum(r['no_time'] for r in results),
         'order_breaks': sum(r['order_breaks'] for r in results),
@@ -545,8 +577,13 @@ def episodes_report(on, off, interval_h, window_start, around=1800):
                     ratios['before_vs_clock'].append(before / cm)
             neigh.append(item)
         w = min(interval_h / 4.0, 6.0) if interval_h else None
+        lo, hi = r.get('window') or (None, None)
+        expected = None
+        if interval_h and lo is not None and hi is not None and s_times:
+            expected = 1 + int((hi - s_times[0]) // (interval_h * 3600))
         out['captures'].append({
-            'path': r['path'], 'episodes': len(starts), 'first_start_hours': first,
+            'path': r['path'], 'episodes': len(starts),
+            'episodes_expected_after_first': expected, 'first_start_hours': first,
             'gaps_hours': gaps, 'gap_tolerance_hours': None if w is None else round(w / 2, 2),
             'gaps_outside_tolerance': [g for g in gaps if w is not None and abs(g - interval_h) > w / 2],
             'start_hours_utc': [int(t // 3600 % 24) for t in s_times],
@@ -656,7 +693,8 @@ def report(spec_path, manifest_path):
         'timestamps': chk.get('timestamps'), 'records': chk.get('lines'),
         'missing': chk.get('missing'), 'extra': chk.get('extra'),
         'carrier_excluded': chk.get('carrier_excluded')}
-    rep['4_5_profile'] = profile(long_ or off) if (long_ or off) else None
+    rep['4_5_profile'] = profile(off) if off else (profile(long_) if long_ else None)
+    rep['11_profile_default'] = profile(long_) if long_ else None
     rep['6_state'] = state_growth(runs['long'], runs.get('long-base')) if 'long' in runs else None
     live_path = os.path.join(os.path.dirname(manifest_path), 'live.json')
     if os.path.exists(live_path):
@@ -785,7 +823,7 @@ def main():
     p.add_argument('--top', type=int, default=40)
     c = sub.add_parser('chains')
     c.add_argument('spec')
-    c.add_argument('--off', nargs='+', required=True)
+    c.add_argument('--off', nargs='*', default=[])
     c.add_argument('--on', nargs='*', default=[])
     s = sub.add_parser('sample')
     s.add_argument('capture')

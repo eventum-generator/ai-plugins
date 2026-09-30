@@ -28,9 +28,9 @@ Scripts are at `<skill dir>/../../scripts/`.
 1. **Record the files** - `python <scripts>/measure.py digest <generator> --save .content-design/<name>/review-digest.json`, adding `--previous <old review-digest.json>` on a re-review: only the changed and added files need reading again; every measurement is rerun.
 2. **Read** `generator.yml`, templates, samples and inputs against the criteria: format against the reference records, rate and rhythm, template branches, parameter validation, state bounds, and with a chain the guard and episode logic. Note what the measurements must confirm.
 3. **Capture** - `python <scripts>/capture.py run <generator> --out .content-design/<name>/captures/review --set review` and `capture.py live` into the same directory, with the carrier tags (`--carrier`) and the shortest admitted interval (`--short-interval`) that the generator's inputs and parameter checks show.
-4. **Measure** - `python <scripts>/measure.py report <measure.json> <captures/review/manifest.json>`; every flag is a finding; judge the other numbers by `references/acceptance.md`; check every README number and command.
+4. **Measure** - `python <scripts>/measure.py report <measure.json> <captures/review/manifest.json> --save .content-design/<name>/review-report.json`; extra runs for parameter variants use `capture.py one --param KEY=VALUE`; every flag is a finding; judge the other numbers by `references/acceptance.md`; check every README number and command.
 5. **Classify** each failure by `references/acceptance.md`.
-6. **Write** `.content-design/<name>/review.md`: digest, date, Eventum version, verdict (CLEAR when no MEDIUM or HIGH, otherwise NOT CLEAR), findings as a table (criterion, severity, evidence with numbers or file and line, what a consumer of the data would see), and the numbers behind the passed criteria. Delete the captures.
+6. **Write** `.content-design/<name>/review.md`: digest, date, Eventum version, verdict (CLEAR when no MEDIUM or HIGH, otherwise NOT CLEAR), findings as a table (criterion, severity, evidence with numbers or file and line, what a consumer of the data would see), and the numbers behind the passed criteria. Delete the captures; keep `review-report.json`.
 7. **Feedback** - `../using-content-design/references/feedback.md`.
 
 ## Result

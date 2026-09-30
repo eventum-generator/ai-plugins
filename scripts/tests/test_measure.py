@@ -178,6 +178,18 @@ class ParseProfileTest(unittest.TestCase):
         self.assertEqual(res['records'], 2)
         self.assertEqual(res['hours'][10], 1)
 
+    def test_sequences_and_window_days(self):
+        spec = {'class': {'path': 'event.action'},
+                'sequences': {'login-to-logout': {'group': {'path': 'user.name'},
+                                                  'from': {'path': 'event.action', 'values': ['login']},
+                                                  'to': {'path': 'event.action', 'values': ['logout']}}}}
+        rows = [ev(T0 + 3600, 'login'), ev(T0 + 3700, 'logout'),
+                ev(T0 + 86400 + 10, 'login', user='bob'), ev(T0 + 86400 + 40, 'logout', user='bob')]
+        res = measure.scan(spec, write(self.dir / 'seq.jsonl', rows), T0, T0 + 2 * 86400)
+        prof = measure.profile([res])
+        self.assertEqual(prof['sequence_delays_s']['login-to-logout']['max'], 100)
+        self.assertEqual(prof['per_day_utc']['min'], 2)  # both days lie wholly inside the window
+
     def test_groups_and_order(self):
         spec = {'class': {'path': 'event.action'},
                 'groups': {'failures': {'path': 'event.action', 'values': ['fail']}}}
