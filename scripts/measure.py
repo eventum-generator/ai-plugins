@@ -520,13 +520,13 @@ def report(spec_path, manifest_path):
     if 'long' in runs and long_:
         rep['speed_records_per_s'] = round(long_[0]['records'] / max(runs['long']['wall_s'], 0.001))
     if man.get('has_chain') and spec_raw.get('chain'):
-        rep['11_chains'] = chains_report(off, on + short)
-        rep['12_presence'] = presence(off, on + short)
+        rep['12_chains'] = chains_report(off, on + short)
+        rep['13_presence'] = presence(off, on + short)
         interval = man.get('default_interval_hours')
-        rep['14_17_episodes_default'] = episodes_report(on, off, interval, window)
+        rep['15_18_episodes_default'] = episodes_report(on, off, interval, window)
         short_run = runs.get('short')
         if short:
-            rep['17_episodes_short'] = episodes_report(short, off, short_run.get('interval'), window)
+            rep['18_episodes_short'] = episodes_report(short, off, short_run.get('interval'), window)
     rep['flags'] = flags(rep)
     return rep
 
@@ -550,28 +550,28 @@ def flags(rep):
     live = rep.get('7_live')
     if isinstance(live, dict) and not live.get('ok'):
         out.append('7: live check failed')
-    ch = rep.get('11_chains')
+    ch = rep.get('12_chains')
     if ch:
         for path, v in ch['off'].items():
             if v['chains']:
-                out.append('11: %d complete chains in background %s' % (v['chains'], path))
+                out.append('12: %d complete chains in background %s' % (v['chains'], path))
             if v['missing_steps']:
-                out.append('12: steps %s absent from background %s' % (v['missing_steps'], path))
+                out.append('13: steps %s absent from background %s' % (v['missing_steps'], path))
             if v['missing_chain_keys_count']:
-                out.append('12: %d chain keys absent from background %s' % (v['missing_chain_keys_count'], path))
+                out.append('13: %d chain keys absent from background %s' % (v['missing_chain_keys_count'], path))
         for path, v in ch['on'].items():
             if not v['chains']:
-                out.append('11: no chain in anomaly capture %s' % path)
-    pr = rep.get('12_presence')
+                out.append('12: no chain in anomaly capture %s' % path)
+    pr = rep.get('13_presence')
     if pr and pr['absent_in_some_background']:
-        out.append('12: episode actors absent from some background: %s' % pr['absent_in_some_background'][:10])
-    for key in ('14_17_episodes_default', '17_episodes_short'):
+        out.append('13: episode actors absent from some background: %s' % pr['absent_in_some_background'][:10])
+    for key in ('15_18_episodes_default', '18_episodes_short'):
         ep = rep.get(key)
         if not ep:
             continue
         for cap in ep['captures']:
             if cap['gaps_outside_tolerance']:
-                out.append('17: gaps %s h outside %s ± %s h in %s' % (
+                out.append('18: gaps %s h outside %s ± %s h in %s' % (
                     cap['gaps_outside_tolerance'], ep['interval_hours'], cap['gap_tolerance_hours'], cap['path']))
     return out
 

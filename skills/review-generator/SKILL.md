@@ -5,30 +5,33 @@ description: Use to accept or check an Eventum generator - "review this generato
 
 # Review an Eventum generator
 
-An independent acceptance review: fresh captures, measured against the acceptance criteria, with a verdict tied to the exact files reviewed. The review reports; it does not edit the generator.
+An independent acceptance review: fresh captures measured against the acceptance criteria, with a verdict tied to the exact files reviewed. The review reports; it does not edit the generator.
 
 ## Before starting
 
-- Run in a context that did not build the generator (a subagent or a new session); the author's notes are claims to verify, not evidence.
-- Inputs: the generator directory; `.content-design/<name>/brief.md` and `reference/` for the native format when they exist (otherwise the README's references); with a chain, `chain.json` when it exists (otherwise write the spec from the README's `## Anomaly Chain`).
-- `eventum --version` works. Captures go to `.content-design/<name>/captures/review/`.
+- Run in a context that did not build the generator (a subagent or a new session); the author's notes and reports are claims to verify, not evidence.
+- `python <skill dir>/../../scripts/capture.py doctor` reports `ok`.
+- Inputs: the generator directory; `.content-design/<name>/brief.md` and `reference/` for the native format when they exist (otherwise the README's references); `measure.json` when it exists (otherwise write it from the README per `../create-generator/references/measure-spec.md`).
+- The review writes only `.content-design/<name>/review.md`, `review-digest.json` and `captures/review/`.
 
 ## References
 
-- `references/acceptance.md` - criteria, severities, the capture protocol, defects that most often slip through.
-- `../create-generator/references/eventum-api.md` - the Eventum API, to judge template and input logic.
-- `../create-generator/references/anomaly-chain.md` - the chain design rules the chain criteria refer to.
-- `../create-generator/references/chain-spec.md` - the chain spec format.
-- `scripts/chain_check.py` at the plugin root (`<skill dir>/../../scripts/`).
+- `references/acceptance.md` - criteria, severities, the capture set, what each measurement proves, defects that most often slip through.
+- `../create-generator/references/anomaly-chain.md` - the chain rules the chain criteria refer to.
+- `../create-generator/references/eventum-api.md` - the Eventum API, to judge templates and inputs.
+- `../create-generator/references/generator-rules.md` - the conventions criteria 8-11 refer to.
+
+Scripts are at `<skill dir>/../../scripts/`.
 
 ## Process
 
-1. **Record the files** - `python <chain_check.py> digest <generator dir>`.
-2. **Read** `generator.yml`, templates, samples and inputs against the criteria: format against the reference records, rate and rhythm, state bounds, parameter validation, and with a chain the guard and episode logic. Note what each capture must confirm.
-3. **Capture** - the review set of the capture protocol in `references/acceptance.md`; 14-day chain runs where a check needs more episodes.
-4. **Measure** each criterion as `references/acceptance.md` describes, and every README number and command.
-5. **Classify** each failure by `references/acceptance.md`; a finding states the criterion, the evidence (numbers, file and line), and why it matters to a consumer of the data.
-6. **Write** `.content-design/<name>/review.md`: digest, date, Eventum version, verdict (CLEAR when no MEDIUM or HIGH, otherwise NOT CLEAR), findings by severity, the measured numbers behind the passed criteria. Delete captures.
+1. **Record the files** - `python <scripts>/measure.py digest <generator> --save .content-design/<name>/review-digest.json`, adding `--previous <old review-digest.json>` on a re-review: only the changed and added files need reading again; every measurement is rerun.
+2. **Read** `generator.yml`, templates, samples and inputs against the criteria: format against the reference records, rate and rhythm, template branches, parameter validation, state bounds, and with a chain the guard and episode logic. Note what the measurements must confirm.
+3. **Capture** - `python <scripts>/capture.py run <generator> --out .content-design/<name>/captures/review --set review` and `capture.py live` into the same directory.
+4. **Measure** - `python <scripts>/measure.py report <measure.json> <captures/review/manifest.json>`; every flag is a finding; judge the other numbers by `references/acceptance.md`; check every README number and command.
+5. **Classify** each failure by `references/acceptance.md`.
+6. **Write** `.content-design/<name>/review.md`: digest, date, Eventum version, verdict (CLEAR when no MEDIUM or HIGH, otherwise NOT CLEAR), findings as a table (criterion, severity, evidence with numbers or file and line, what a consumer of the data would see), and the numbers behind the passed criteria. Delete the captures.
+7. **Feedback** - `../using-content-design/references/feedback.md`.
 
 ## Result
 
@@ -38,5 +41,5 @@ An independent acceptance review: fresh captures, measured against the acceptanc
 ## Rules
 
 - Every finding rests on a measurement or a cited line; no finding from impression.
-- The review measures the files it records; a changed file invalidates the verdict.
+- The verdict holds for the recorded files; any change outside the README invalidates it.
 - Background tuned only to hide a number is itself a finding under criterion 5.

@@ -7,8 +7,8 @@ The plugin `content-design` in the marketplace `eventum-ai-plugins` holds skills
 A skill lives in `skills/<name>/SKILL.md`; next to it `references/` (facts), `scripts/` (Python) and `assets/` (skeletons). The adapters `.claude-plugin/`, `.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json`, `.agents/plugins/marketplace.json` and `.opencode/plugins/content-design.js` load `skills/` as a whole; a new skill needs no registration.
 
 - `skills/using-content-design/references/orientation.md` is injected at session start (`hooks/` for Claude Code and Cursor, the OpenCode adapter; Codex loads the `using-content-design` skill). It maps stages to skills; a new stage skill is added there.
-- Skills of one pipeline: `research-source` → `create-generator` → `review-generator` → `publish-generator`. They exchange files in `.content-design/<name>/` and reference each other's `references/` by relative path instead of duplicating them.
-- `scripts/chain_check.py` is the shared chain checker (skills call it as `<skill dir>/../../scripts/chain_check.py`); `scripts/check-no-version.sh` is the repository check: a `version` field in a manifest freezes updates for users.
+- Skills of one pipeline: `research-source` → `create-generator` → `review-generator` → `publish-generator`. They exchange files in `.content-design/<name>/` and reference each other's `references/` by relative path instead of duplicating them. `using-content-design/references/feedback.md` is the shared last step of every stage.
+- `scripts/` holds the shared tools, called as `<skill dir>/../../scripts/<tool>.py`: `slot.py` (host-wide memory and exclusive slots; every heavy command runs under it), `capture.py` (environment check, bounded test captures, the live check), `measure.py` (every acceptance number, chains, digest). Their tests are in `scripts/tests/`. `scripts/check-no-version.sh` is the repository check: a `version` field in a manifest freezes updates for users.
 
 ## Skill structure
 
@@ -24,11 +24,19 @@ Facts about Eventum in `references/` are verified against the Eventum source of 
 
 ## Scripts
 
-Python 3.9+ with the standard library only; they run on Linux, Windows and macOS, so skills do not rely on bash, sed or other unix tools. Paths in `SKILL.md` are written relative to the skill directory as `<skill dir>/scripts/...`; the harness provides the directory.
+Python 3.9+ with the standard library only; they run on Linux, Windows and macOS, so skills do not rely on bash, sed or other unix tools. Paths in `SKILL.md` are written relative to the skill directory; the harness provides the directory.
+
+- Scripts print compact JSON and exit non-zero on failure, so an agent reads a result instead of writing analysis code.
+- Anything that starts Eventum, a docs build or git on a shared clone holds a slot (`slot.py`); a script never kills a process it did not start.
+- `python3 -m unittest discover -s scripts/tests` passes before a commit that touches `scripts/`.
 
 ## Checking a skill
 
 A subagent without the skill performs a real task (for example, a generator for a given source); its misses are the baseline. A subagent with the skill performs the same task; coverage is compared with the baseline. Then run `bash scripts/check-no-version.sh`.
+
+## Feedback from agents
+
+Agents open issues labelled `agent-feedback` for friction they met (`using-content-design/references/feedback.md`). Triage them: a confirmed problem is fixed where it lives (a fact in a reference, an instruction in `SKILL.md`, a tool in `scripts/` with a test), and the issue is closed with the commit.
 
 ## Process
 
