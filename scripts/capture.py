@@ -441,9 +441,12 @@ def cmd_run(args):
     problems = []
     for r in results:
         if r.get('exit') != 0 or r.get('log_lines') or r.get('ts_log_lines'):
-            problems.append('%s: exit %s, %s log lines%s' % (
-                r['name'], r.get('exit'), r.get('log_lines'),
-                ' (%s)' % r['error'] if r.get('error') else ''))
+            hint = {'memory': ': memory above 1.5 x --mem, rerun with a larger --mem',
+                    'timeout': ': exceeded --timeout',
+                    'no-slot': ': no slot'}.get(r.get('reason'), '')
+            problems.append('%s: exit %s, %s log lines%s%s (log: %s)' % (
+                r['name'], r.get('exit'), r.get('log_lines'), hint,
+                ' (%s)' % r['error'] if r.get('error') else '', r.get('log')))
     manifest['ok'] = not problems
     manifest['problems'] = problems
     dump(out / 'manifest.json', manifest)
