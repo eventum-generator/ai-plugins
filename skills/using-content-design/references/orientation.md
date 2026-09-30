@@ -17,7 +17,7 @@ research-source → create-generator → review-generator → publish-generator.
 
 - Start at the stage the user's material allows: own format or samples → `create-generator`; an existing generator → `review-generator`.
 - Each stage reads the previous stage's files from the working directory and writes its own.
-- A review with MEDIUM or HIGH findings returns to `create-generator`; LOW findings are fixed in the README and the pipeline continues.
+- A review with MEDIUM or HIGH findings returns to `create-generator`; LOW findings are fixed or described in the README and the pipeline continues.
 - The review is done by a context that did not build the generator: a subagent or a new session.
 - Publishing is optional and changes public repositories; it runs only on the user's request.
 
