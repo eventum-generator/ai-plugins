@@ -108,6 +108,28 @@ class ChainTest(unittest.TestCase):
         rows = [ev(T0, 'q'), ev(T0 + 3000, 'q'), ev(T0 + 3500, 'q'), ev(T0 + 4000, 'q'), ev(T0 + 4100, 'q')]
         self.assertEqual(len(self.scan(rows, spec)['chains']), 1)  # the run from 3000 completes at 4100
 
+    def test_linked_step_pairs(self):
+        spec = {'chain': {'key': {'path': 'user.name'}, 'within': 600, 'steps': [
+            {'match': {'path': 'event.action', 'values': ['login']}},
+            {'match': {'path': 'event.action', 'values': ['token-created']}, 'bind': {'T': 'token'}},
+            {'match': {'path': 'event.action', 'values': ['token-revoked']},
+             'eq': {'T': {'path': 'message', 'regex': 'token (\\w+)'}}}]}}
+        rows = [ev(T0, 'login'), dict(ev(T0 + 1, 'token-created'), token='a1'),
+                dict(ev(T0 + 2, 'token-revoked'), message='revoked token b2')]
+        pairs = measure.step_pairs(spec, [write(self.dir / 'p.jsonl', rows)], [(None, None)])
+        self.assertEqual(pairs['steps 0-1'], [1])
+        self.assertEqual(pairs['steps 1-2'], [0])  # created and revoked, but never the same token
+        self.assertEqual(pairs['steps 0-2'], [1])
+
+    def test_presence_of_pairs(self):
+        spec = dict(CHAIN, presence={'pair': {'paths': ['user.name', 'event.ip']}})
+        on = measure.scan(spec, write(self.dir / 'on2.jsonl', [
+            ev(T0, 'fail', ip='1'), ev(T0 + 1, 'fail', ip='1'), ev(T0 + 2, 'login', risk=90, ip='1')]))
+        off = measure.scan(spec, write(self.dir / 'off2.jsonl', [ev(T0, 'fail', ip='2')]))
+        rep = measure.presence([off], [on])
+        self.assertEqual(rep['pair']['absent_in_some_background'], ['alice|1'])
+        self.assertEqual(rep['actor']['absent_in_some_background'], [])
+
     def test_accept_report(self):
         off = self.scan([ev(T0, 'fail'), ev(T0 + 2, 'login', risk=90)])
         on = measure.scan(CHAIN, write(self.dir / 'on.jsonl', [

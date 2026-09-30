@@ -83,7 +83,7 @@ Written for the consumer of the data, in this order and with these headings:
 3. `## Volume and Timing` - records per day, hourly curve or schedule, populations.
 4. `## Anomaly Chain`, with a chain - bold lead-ins: **Sequence**, **Linking fields**, **Episode shape**, **Recurrence** (interval from the actual start, window, start hours, behaviour at short intervals), **Variation**, **Background overlap** (what background contains of the chain), **Volume** (each episode adds its own records), **Detection idea**. Then: `anomaly_mode` defaults to `true`; `false` gives background only.
 5. `## Parameters` - `### Event Parameters` (name, default, range, meaning), `### Sample Files` (what users edit for their own entities), `### Volume` (the input settings or pattern files that set volume and hours), `### Output Parameters` (an override example with `${params.*}` / `${secrets.*}`).
-6. `## Usage` - the live command from the repository root; the finite batch window recipe (which pattern files and inputs get which `start` and `end`, with offsets); last line `Performance: about N records per second on <CPU>.`
+6. `## Usage` - the live command from the repository root; the finite batch window recipe (which pattern files and inputs get which `start` and `end`, with offsets); last line `Performance: about N records per second on <CPU>.` (records per CPU second from the report, which does not depend on parallel load)
 7. `## Sample Output` - one complete event copied byte for byte from a capture of the default configuration (`measure.py sample`).
 8. `## Limitations` - only how the data differs from the real source: missing event types or fields, inferred values, synthetic rates, timing.
 9. `## References` - vendor documentation, the matching Elastic integration.

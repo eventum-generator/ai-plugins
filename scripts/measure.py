@@ -183,6 +183,10 @@ class Spec:
         self.cls = compile_value(raw.get('class'))
         self.groups = {k: compile_cond(v) for k, v in (raw.get('groups') or {}).items()}
         self.actor = compile_value(raw.get('actor'))
+        pres = dict(raw.get('presence') or {})
+        if raw.get('actor'):
+            pres.setdefault('actor', raw['actor'])
+        self.presence = {n: compile_value(v) for n, v in pres.items()}
         self.day_shift = float(raw.get('day_start_hour', 0)) * 3600
         chain = raw.get('chain')
         self.chain = None
@@ -289,6 +293,7 @@ def scan(spec_raw, path, lo=None, hi=None):
         'days': {}, 'hours': [0] * 24, 'classes': {},
         'groups': {g: {'records': 0, 'hours': [0] * 24} for g in spec.groups},
         'actors': {}, 'last_step': {}, 'chains': [], 'step_hits': [], 'keys': [],
+        'presence': {n: {} for n in spec.presence},
     }
     chain = spec.chain
     state, keys, last_chain_end = {}, set(), {}
@@ -339,9 +344,13 @@ def scan(spec_raw, path, lo=None, hi=None):
             a = spec.actor(row)
             if a is not None:
                 actor_times.setdefault(a, []).append(t)
+            k = chain_key(chain, row) if chain else None
+            for n, get in spec.presence.items():
+                v = get(row)
+                if v is not None:
+                    out['presence'][n].setdefault(v, []).append((t, k))
             if not chain:
                 continue
-            k = chain_key(chain, row)
             if k is None:
                 continue
             keys.add(k)
@@ -477,8 +486,12 @@ def chains_report(off, on):
     return rep
 
 
-def _count(times, lo, hi):
-    return sum(1 for x in times if lo <= x < hi)
+def _before(times, t, around):
+    return sum(1 for x in times if t - around <= x < t)
+
+
+def _after(times, t, around):
+    return sum(1 for x in times if t < x <= t + around)
 
 
 def episodes_report(on, off, interval_h, window_start, around=1800):
@@ -492,8 +505,7 @@ def episodes_report(on, off, interval_h, window_start, around=1800):
         for actor, lasts in r['last_step'].items():
             times = r['actors'].get(actor, [])
             for t in lasts:
-                same_moment.setdefault(actor, []).append(
-                    (_count(times, t - around, t), _count(times, t, t + around + 1e-9) - 1))
+                same_moment.setdefault(actor, []).append((_before(times, t, around), _after(times, t, around)))
         for actor, times in r['actors'].items():
             same_clock.setdefault(actor, []).append((r, times))
     ratios = {'before_vs_moment': [], 'after_vs_moment': [], 'before_vs_clock': []}
@@ -507,14 +519,14 @@ def episodes_report(on, off, interval_h, window_start, around=1800):
             if actor is None:
                 continue
             times = r['actors'].get(actor, [])
-            before, after = _count(times, t0 - around, t0), _count(times, t1 + 1e-9, t1 + around)
+            before, after = _before(times, t0, around), _after(times, t1, around)
             moments = same_moment.get(actor, [])
             clock = []
             for rr, btimes in same_clock.get(actor, []):
                 d = (rr['first'] // 86400) * 86400
                 while d < rr['last']:
                     lo = d + t0 % 86400
-                    clock.append(_count(btimes, lo - around, lo))
+                    clock.append(_before(btimes, lo, around))
                     d += 86400
             item = {'start': iso(t0), 'actor': actor, 'before': before, 'after': after}
             if moments:
@@ -547,18 +559,48 @@ def episodes_report(on, off, interval_h, window_start, around=1800):
 
 
 def presence(off, on):
-    """Episode actors and their record counts in every background capture."""
-    used = set()
-    for r in on:
-        used |= {c[3] for c in r['chains'] if c[3] is not None}
-    rows = {}
-    for r in off:
-        for a in used:
-            rows.setdefault(a, []).append(len(r['actors'].get(a, [])))
-    lows = sorted(((min(v), a) for a, v in rows.items()))[:10]
-    return {'episode_actors': len(used),
-            'absent_in_some_background': sorted(a for a, v in rows.items() if min(v) == 0),
-            'lowest_counts': [{'actor': a, 'min_records_per_capture': n} for n, a in lows]}
+    """Per presence spec (actor, pairs, ...): the values episodes use (records of
+    the episode's key inside its span) and their counts in every background capture."""
+    out = {}
+    for name in (on[0]['presence'] if on else {}):
+        used = set()
+        for r in on:
+            spans = {}
+            for t0, t1, k, _ in r['chains']:
+                spans.setdefault(k, []).append((t0, t1))
+            for v, hits in r['presence'][name].items():
+                if any(k in spans and any(a <= t <= b for a, b in spans[k]) for t, k in hits):
+                    used.add(v)
+        counts = {v: [len(r['presence'][name].get(v, ())) for r in off] for v in used}
+        lows = sorted((min(c), v) for v, c in counts.items())[:10]
+        out[name] = {'episode_values': len(used),
+                     'absent_in_some_background': sorted(v for v, c in counts.items() if min(c or [0]) == 0),
+                     'lowest': [{'value': v, 'min_records_per_capture': n} for n, v in lows]}
+    return out
+
+
+def step_pairs(spec_raw, off_paths, windows):
+    """Background occurrences of every ordered pair of chain steps with the links
+    between them (bind at the first, eq / ne at the second) within the chain
+    window: a pair only episodes contain is a zero-noise rule on part of the chain."""
+    steps = spec_raw['chain']['steps']
+    if len(steps) < 3:
+        return None
+    jobs, names = [], []
+    for i in range(len(steps)):
+        for j in range(i + 1, len(steps)):
+            pair = dict(spec_raw, chain=dict(spec_raw['chain'], steps=[steps[i], steps[j]]))
+            pair.pop('presence', None)
+            for p, w in zip(off_paths, windows):
+                jobs.append((pair, p) + tuple(w))
+                names.append('steps %d-%d' % (i, j))
+    workers = min(len(jobs), os.cpu_count() or 2)
+    with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as pool:
+        res = list(pool.map(_scan_job, jobs))
+    out = {}
+    for n, r in zip(names, res):
+        out.setdefault(n, []).append(len(r['chains']))
+    return out
 
 
 def _growth(run):
@@ -603,7 +645,8 @@ def report(spec_path, manifest_path):
     scanned = dict(zip([r['name'] for r in caps], results))
     off = [scanned[r['name']] for r in caps if r['kind'] == 'off']
     on = [scanned[r['name']] for r in caps if r['kind'] == 'on']
-    short = [scanned[r['name']] for r in caps if r['kind'] == 'short']
+    short_runs = [r for r in caps if r['kind'] == 'short']
+    short = [scanned[r['name']] for r in short_runs]
     long_ = [scanned[r['name']] for r in caps if r['kind'] == 'long']
     window = parse_time(man['window_start'])
     rep = {'manifest': manifest_path, 'eventum': man['eventum'], 'set': man['set']}
@@ -622,15 +665,21 @@ def report(spec_path, manifest_path):
     else:
         rep['7_live'] = 'not run: capture.py live'
     if 'long' in runs and long_:
-        rep['speed_records_per_s'] = round(long_[0]['records'] / max(runs['long']['wall_s'], 0.001))
+        cpu = runs['long'].get('cpu_s')
+        rep['speed'] = {'records_per_cpu_s': round(long_[0]['records'] / cpu) if cpu else None,
+                        'records_per_wall_s': round(long_[0]['records'] / max(runs['long']['wall_s'], 0.001)),
+                        'note': 'CPU seconds do not depend on parallel load; wall seconds do'}
     if man.get('has_chain') and spec_raw.get('chain'):
         rep['12_chains'] = chains_report(off, on + short)
         rep['13_presence'] = presence(off, on + short)
+        off_caps = [r for r in caps if r['kind'] == 'off']
+        rep['13_step_pairs_in_background'] = step_pairs(
+            spec_raw, [r['capture'] for r in off_caps],
+            [(parse_time(r['window_start']), parse_time(r['window_end'])) for r in off_caps])
         interval = man.get('default_interval_hours')
         rep['15_18_episodes_default'] = episodes_report(on, off, interval, window)
-        short_run = runs.get('short')
-        if short:
-            rep['18_episodes_short'] = episodes_report(short, off, short_run.get('interval'), window)
+        rep['18_episodes_short'] = {r['name']: episodes_report([scanned[r['name']]], off, r.get('interval'), window)
+                                    for r in short_runs}
     rep['flags'] = flags(rep)
     return rep
 
@@ -671,11 +720,16 @@ def flags(rep):
         for path, v in ch['on'].items():
             if not v['chains']:
                 out.append('12: no chain in anomaly capture %s' % path)
-    pr = rep.get('13_presence')
-    if pr and pr['absent_in_some_background']:
-        out.append('13: episode actors absent from some background: %s' % pr['absent_in_some_background'][:10])
-    for key in ('15_18_episodes_default', '18_episodes_short'):
-        ep = rep.get(key)
+    for name, pr in (rep.get('13_presence') or {}).items():
+        if pr['absent_in_some_background']:
+            out.append('13: episode %s values absent from some background: %s'
+                       % (name, pr['absent_in_some_background'][:10]))
+    for pair, counts in (rep.get('13_step_pairs_in_background') or {}).items():
+        if not any(counts):
+            out.append('13: chain %s with their links never occur in background: only episodes contain them'
+                       % pair)
+    eps = [rep.get('15_18_episodes_default')] + list((rep.get('18_episodes_short') or {}).values())
+    for ep in eps:
         if not ep:
             continue
         for cap in ep['captures']:

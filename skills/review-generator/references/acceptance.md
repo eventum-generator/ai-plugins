@@ -44,7 +44,7 @@ With a chain:
 |---|---|---|---|
 | Background (`anomaly_mode: false`, or the generator without a chain), 4 days | 2 | 3 | 1, 4, 5, 13 |
 | With a chain, default interval, 4 days | 2 | 3 | 12-18 |
-| With a chain, 6-hour interval, 4 days | 1 | 1 | 18 |
+| With a chain, the shortest admitted interval and any interval the README quotes, 4 days each | 1 each | 1 each | 18 |
 | Default configuration, 14 days: memory series, speed, volume | 1 | 1 | 4, 6, 11 |
 | The same 14 days with a trivial template: Eventum's own memory curve | 1 | 1 | 6 |
 | Timestamps only, then the same moments replayed through the templates, 2 days | 1 | 1 | 3 |
@@ -54,11 +54,12 @@ Four days hold four default-interval episodes; fourteen days make memory growth 
 
 ## Measurements
 
-`measure.py report <measure.json> <manifest.json>` gives every number, keyed by criterion (`2_runs`, `3_one_record_per_timestamp`, `4_5_profile` with per-day, per-weekday, class, group and hourly figures, `6_state`, `7_live`, `12_chains`, `13_presence`, `15_18_episodes_default`, `18_episodes_short`, `speed_records_per_s`), and `flags`: measured facts that fail a criterion outright; it exits 1 while flags remain. Days and hours are UTC; records outside a run's window are counted, not measured. Each flag becomes a finding; the numbers without a flag are judged against the criteria:
+`measure.py report <measure.json> <manifest.json>` gives every number, keyed by criterion (`2_runs`, `3_one_record_per_timestamp`, `4_5_profile` with per-day, per-weekday, class, group and hourly figures, `6_state`, `7_live`, `12_chains`, `13_presence`, `13_step_pairs_in_background`, `15_18_episodes_default`, `18_episodes_short` per interval, `speed` per CPU and wall second), and `flags`: measured facts that fail a criterion outright; it exits 1 while flags remain. Days and hours are UTC; records outside a run's window are counted, not measured. Each flag becomes a finding; the numbers without a flag are judged against the criteria:
 
 - 4, 5: class shares, group shares and hourly curves against the brief and the design.
 - 6: memory growth over the long run beyond the trivial-template baseline, above 10% and 50 MB between its second and last quarter.
 - 15: the actor's records in the 30 minutes before and after each episode against the same actor around ordinary background records of the chain's last step and at the same clock time on background days; with fewer than about five records per window the ratios carry no signal, and the criterion is judged from the templates.
+- 13: episode values of every `presence` spec in each background capture, and background occurrences of every linked pair of chain steps; a pair only episodes contain is flagged.
 - 18: gaps, first start, start hours, distinct actors and keys per capture.
 
 Criteria 1, 8, 9, 10, 14, 16 and 17 need reading: the sample record against the reference records, the templates, the samples, the README.

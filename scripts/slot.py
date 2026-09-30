@@ -264,6 +264,16 @@ def _tree_rss_mb(pgid):
     return total / (1024 * 1024)
 
 
+def _cpu_s(pid):
+    """User + system CPU seconds of a process and its threads (Linux), or None."""
+    try:
+        with open('/proc/%d/stat' % pid) as fh:
+            f = fh.read().rsplit(')', 1)[1].split()
+        return (int(f[11]) + int(f[12])) / os.sysconf('SC_CLK_TCK')
+    except (OSError, IndexError, ValueError):
+        return None
+
+
 def _die_with_parent():
     """Linux: the child gets SIGKILL when the process that started it dies."""
     try:
@@ -309,7 +319,7 @@ def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
         kwargs['start_new_session'] = True
         if sys.platform.startswith('linux'):
             kwargs['preexec_fn'] = _die_with_parent
-    reason, peak, series = 'exit', None, []
+    reason, peak, series, cpu = 'exit', None, [], None
     proc = None
     try:
         proc = subprocess.Popen(cmd, **kwargs)
@@ -325,6 +335,8 @@ def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
                 reason = 'cancelled'
                 _kill_tree(proc)
                 break
+            if not WINDOWS:
+                cpu = _cpu_s(proc.pid) or cpu
             rss = None if WINDOWS else _tree_rss_mb(proc.pid)
             if rss is not None:
                 peak = rss if peak is None else max(peak, rss)
@@ -351,6 +363,7 @@ def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
     return {'exit': code, 'reason': reason,
             'wall_s': round(time.monotonic() - start, 2),
             'peak_mb': None if peak is None else round(peak),
+            'cpu_s': None if cpu is None else round(cpu, 1),
             'rss_mb': [list(x) for x in series[::step]]}
 
 

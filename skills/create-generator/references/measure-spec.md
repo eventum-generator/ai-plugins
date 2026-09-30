@@ -33,6 +33,7 @@
 | `class` | Value spec of the event class whose shares the README table states. |
 | `groups` | Named conditions: populations, outcomes or anything with a share and an hourly curve to report. |
 | `actor` | Value spec of the entity an episode is attributed to: its presence in background and its activity around episodes are measured. |
+| `presence` | Named value specs of further entities an episode uses (`{"pair": {"paths": ["user.name", "source.ip"]}}`): each value episodes use is counted in every background capture. `actor` is included. |
 | `day_start_hour` | UTC hour at which a counted day starts (default 0); 12 keeps a night of scheduled jobs in one day. |
 | `chain` | The anomaly chain, when there is one (below). |
 
@@ -41,6 +42,8 @@ A value spec is `{"path": p}` or `{"paths": [p, ...]}` (joined with `|`), with a
 A condition is a clause `{"path": p, ...}` with `values` (string match), `regex`, numeric `gt` / `ge` / `lt` / `le`, or `"missing": true`, combined with `{"any": [...]}`, `{"all": [...]}` and `{"not": cond}`. A list field matches when any element does.
 
 ## Chain
+
+The chain encodes every linking field the README names (an address, a token id inside a message), because the measurements of background pairs and presence see only what the spec links.
 
 | Field | Meaning |
 |---|---|

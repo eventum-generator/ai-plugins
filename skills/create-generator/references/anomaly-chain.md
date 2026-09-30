@@ -22,7 +22,7 @@ Episodes of one key are separated by more than the chain window; within an episo
 
 - The first episode starts within min(interval, 24 h) of the start of generation, so a short run or test window contains one.
 - Each next episode is due one interval after the actual start of the previous one and starts in a window w = min(interval / 4, 6 h) centred on the due time: wide enough that start times do not look periodic, bounded so that gaps stay within interval ± w/2.
-- The start hour inside the window is drawn with weight proportional to the square of the population's hourly volume plus a small floor: episodes concentrate in busy hours, where they hide in traffic, and a start that happens to fall at night does not pin later ones there.
+- The start inside a window is drawn with weight proportional to the square of the population's volume at that time plus 1% of the window's largest such weight, so the busiest part of every window dominates, weekends included, and episodes hide in traffic. The first window spans min(interval, 24 h), so the first start lands in busy hours and later windows, one interval on, stay there; a start at night occurs only where the population is active at night at a comparable level.
 - With scheduled activity, episodes start at scheduled runs.
 - Missed episodes are not replayed.
 - An eligible actor is available in every window. The parameter range excludes intervals the design cannot serve: shorter than the chain window, not a multiple of the schedule period, or too short for a finite resource (a name pool, a free slot, working hours).

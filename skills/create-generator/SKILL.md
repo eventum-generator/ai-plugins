@@ -65,7 +65,7 @@ python <scripts>/capture.py live <generator> --out .content-design/<name>/captur
 python <scripts>/measure.py report .content-design/<name>/measure.json .content-design/<name>/captures/manifest.json --save .content-design/<name>/report.json
 ```
 
-- `--carrier` names every carrier tag; `--short-interval` is the shortest interval the parameter range admits (default 6), `0` when that is the default interval.
+- `--carrier` names every carrier tag; `--short-interval` takes the shortest interval the parameter range admits and every interval the README quotes (default 6; `0` for none).
 - The live check shifts the day curve so that its busiest hour runs now and scales rates to about 40 records; a schedule is moved into the window.
 - `report` exits 1 while flags remain. Every flag is a defect to fix; the other numbers are judged in phase 4. After a fix, rerun the set: runs execute in parallel and are cheap next to a missed defect. Keep `report.json` and the captures until the README is written.
 

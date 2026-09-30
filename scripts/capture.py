@@ -511,7 +511,7 @@ def check_pair(args, rec, cfg_path, cfg, work, eventum, py, window, days, mode, 
         dump(cfg2_path, cfg2)
         res2 = execute(eventum, cfg2_path, rec['name'] + '-replay', out, args.mem, args.timeout)
         rec['lines'] = count_lines(work2 / 'output' / 'events.out')
-        rec.update({k: res2[k] for k in ('exit', 'reason', 'wall_s', 'peak_mb', 'log', 'log_lines')})
+        rec.update({k: res2[k] for k in ('exit', 'reason', 'wall_s', 'peak_mb', 'cpu_s', 'log', 'log_lines')})
     finally:
         if not args.keep:
             shutil.rmtree(work2, ignore_errors=True)
@@ -529,8 +529,9 @@ def plan(args, has_chain):
     if has_chain:
         for i in range(counts['on']):
             runs.append(('on-%d' % (i + 1), 'on', 'on', None, args.days))
-        if args.short_interval:
-            runs.append(('short', 'short', 'on', args.short_interval, args.days))
+        for h in args.short_interval:
+            if h:
+                runs.append(('short-%g' % h, 'short', 'on', h, args.days))
     runs.append(('long', 'long', 'as-is', None, args.long_days))
     runs.append(('long-base', 'base', 'as-is', None, args.long_days))
     runs.append(('check', 'check', 'on' if has_chain else 'as-is', None, args.check_days))
@@ -736,8 +737,9 @@ def main():
     r.add_argument('--days', type=int, default=4)
     r.add_argument('--long-days', type=int, default=14)
     r.add_argument('--check-days', type=int, default=2)
-    r.add_argument('--short-interval', type=float, default=6,
-                   help='hours; the shortest interval the design admits, 0 to skip the run')
+    r.add_argument('--short-interval', type=float, nargs='+', default=[6],
+                   help='hours: the shortest interval the design admits and any interval the README '
+                        'quotes; 0 for none')
     r.add_argument('--carrier', action='append', default=[], help='tag of a carrier input')
     o = sub.add_parser('one', parents=[common], help='one bounded run')
     o.add_argument('--name', required=True)
