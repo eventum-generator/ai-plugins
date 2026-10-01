@@ -41,6 +41,14 @@
   {%- endif -%}
   ```
 
+  An operation that can raise (`module.ipaddress.ip_network`) runs after storing its message, so a failure still ends the run after one error:
+
+  ```jinja
+  {%- do shared.set('invalid', 'vpn_subnet must be an IPv4 network') -%}
+  {%- set net = module.ipaddress.ip_network(params.vpn_subnet) -%}
+  {%- do shared.pop('invalid') -%}
+  ```
+
 - Top-level `${params.*}` / `${secrets.*}` appear only in the README's output override example, never in the shipped file.
 
 ## Samples
@@ -88,4 +96,4 @@ Written for the consumer of the data, in this order and with these headings:
 8. `## Limitations` - only how the data differs from the real source: missing event types or fields, inferred values, synthetic rates, timing.
 9. `## References` - vendor documentation, the matching Elastic integration.
 
-The README never describes the generator's mechanism (inputs, ticks, queues, state, guards) or the validation process. Every number comes from the measurement report of the default configuration, and a range covers every capture.
+The README never describes the generator's mechanism (inputs, ticks, queues, state, guards) or the validation process. Every number comes from the measurement report: background figures from the background runs, others from the default configuration; counts are ranges covering every capture, shares are rounded to one decimal, and classes rarer than about one per day are named as possibly absent from a short window.

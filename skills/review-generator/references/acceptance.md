@@ -58,8 +58,8 @@ Four days hold four default-interval episodes; fourteen days make memory growth 
 
 - 4, 5: class shares, group shares, hourly curves and sequence delays of background (`4_5_profile`, from the background runs) against the brief and the design; the README's figures come from the default configuration (`11_profile_default`).
 - 6: memory growth over the long run beyond the trivial-template baseline, above 10% and 50 MB between its second and last quarter.
-- 15: the actor's records in the 30 minutes before and after each episode against the same actor around ordinary background records of the chain's last step and at the same clock time on background days; with fewer than about five records per window the ratios carry no signal, and the criterion is judged from the templates.
-- 13: episode values of every `presence` spec in each background capture, and background occurrences of every linked pair of chain steps; a pair only episodes contain is flagged.
+- 15: the actor's records in the 30 minutes before each episode against the same actor before ordinary background records of the chain's first step and at the same clock time on background days, and after each episode against the actor after ordinary records of the last step; with fewer than about five records per window the ratios carry no signal, and the criterion is judged from the templates.
+- 13: episode values of every `presence` spec in each background capture, and background occurrences of every pair of chain steps; a pair linked by a value beyond the key that only episodes contain is flagged.
 - 18: gaps, first start, start hours, distinct actors and keys per capture.
 
 Criteria 1, 8, 9, 10, 14, 16 and 17 need reading: the sample record against the reference records, the templates, the samples, the README.

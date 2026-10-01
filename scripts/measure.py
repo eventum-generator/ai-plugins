@@ -294,7 +294,7 @@ def scan(spec_raw, path, lo=None, hi=None):
         'outside_window': 0, 'order_breaks': 0, 'first': None, 'last': None,
         'days': {}, 'hours': [0] * 24, 'classes': {},
         'groups': {g: {'records': 0, 'hours': [0] * 24} for g in spec.groups},
-        'actors': {}, 'last_step': {}, 'chains': [], 'step_hits': [], 'keys': [],
+        'actors': {}, 'first_step': {}, 'last_step': {}, 'chains': [], 'step_hits': [], 'keys': [],
         'presence': {n: {} for n in spec.presence},
         'window': [lo, hi], 'day_shift': spec.day_shift,
         'sequences': {n: [] for n in spec.sequences},
@@ -373,6 +373,8 @@ def scan(spec_raw, path, lo=None, hi=None):
                     out['step_hits'][i] += 1
             if a is not None and steps[-1]['_c'](row):
                 out['last_step'].setdefault(a, []).append(t)
+            if a is not None and steps[0]['_c'](row):
+                out['first_step'].setdefault(a, []).append(t)
             # Partials {(idx, binds): (earliest t0, latest t0, actor)}: every path
             # at one step with one binding advances together, so the range of
             # first-step times is exact for existence (the latest decides expiry)
@@ -485,7 +487,8 @@ def profile(results, top=40):
         'records': total,
         'per_day_utc': {'min': min(per_day), 'median': statistics.median(per_day),
                     'max': max(per_day)} if per_day else None,
-        'per_weekday_mean': {d: round(statistics.mean(v)) for d, v in weekday.items()},
+        'per_weekday_utc': {d: {'min': min(v), 'mean': round(statistics.mean(v)), 'max': max(v)}
+                            for d, v in weekday.items()},
         'class_count': len(classes), 'class_share_pct': shares,
         'hourly_pct_utc': curve(hours),
         'groups': {g: {'share_pct': round(100.0 * v['records'] / total, 2) if total else 0,
@@ -527,17 +530,19 @@ def _after(times, t, around):
 
 
 def episodes_report(on, off, interval_h, window_start, around=1800):
-    """Recurrence, and the actor's activity around each episode compared with
-    its activity around ordinary background records of the chain's last step
-    (the same kind of moment without the chain) and at the same clock time
-    on background days."""
+    """Recurrence, and the actor's activity around each episode: before it against
+    the actor before ordinary background records of the chain's first step, after it
+    against the actor after ordinary records of the last step (the same kind of
+    moment without the chain), and before it at the same clock time on background days."""
     out = {'interval_hours': interval_h, 'around_seconds': around, 'captures': []}
-    same_moment, same_clock = {}, {}
+    first_moment, last_moment, same_clock = {}, {}, {}
     for r in off:
+        for actor, firsts in r['first_step'].items():
+            times = r['actors'].get(actor, [])
+            first_moment.setdefault(actor, []).extend(_before(times, t, around) for t in firsts)
         for actor, lasts in r['last_step'].items():
             times = r['actors'].get(actor, [])
-            for t in lasts:
-                same_moment.setdefault(actor, []).append((_before(times, t, around), _after(times, t, around)))
+            last_moment.setdefault(actor, []).extend(_after(times, t, around) for t in lasts)
         for actor, times in r['actors'].items():
             same_clock.setdefault(actor, []).append((r, times))
     ratios = {'before_vs_moment': [], 'after_vs_moment': [], 'before_vs_clock': []}
@@ -552,7 +557,7 @@ def episodes_report(on, off, interval_h, window_start, around=1800):
                 continue
             times = r['actors'].get(actor, [])
             before, after = _before(times, t0, around), _after(times, t1, around)
-            moments = same_moment.get(actor, [])
+            fm, lm = first_moment.get(actor, []), last_moment.get(actor, [])
             clock = []
             for rr, btimes in same_clock.get(actor, []):
                 d = (rr['first'] // 86400) * 86400
@@ -561,13 +566,14 @@ def episodes_report(on, off, interval_h, window_start, around=1800):
                     clock.append(_before(btimes, lo, around))
                     d += 86400
             item = {'start': iso(t0), 'actor': actor, 'before': before, 'after': after}
-            if moments:
-                mb = statistics.mean(m[0] for m in moments)
-                ma = statistics.mean(m[1] for m in moments)
-                item.update({'moment_before_mean': round(mb, 2), 'moment_after_mean': round(ma, 2),
-                             'moments': len(moments)})
+            if fm:
+                mb = statistics.mean(fm)
+                item.update({'before_first_step_mean': round(mb, 2), 'first_step_moments': len(fm)})
                 if mb:
                     ratios['before_vs_moment'].append(before / mb)
+            if lm:
+                ma = statistics.mean(lm)
+                item.update({'after_last_step_mean': round(ma, 2), 'last_step_moments': len(lm)})
                 if ma:
                     ratios['after_vs_moment'].append(after / ma)
             if clock:
@@ -617,26 +623,41 @@ def presence(off, on):
 
 
 def step_pairs(spec_raw, off_paths, windows):
-    """Background occurrences of every ordered pair of chain steps with the links
-    between them (bind at the first, eq / ne at the second) within the chain
-    window: a pair only episodes contain is a zero-noise rule on part of the chain."""
+    """Background occurrences of every ordered pair of chain steps within the chain
+    window. A variable the second step checks (eq / ne) and the chain binds at or
+    before the first step is bound there from the same field its binding step reads,
+    so a pair keeps every link the chain gives it. Returns {pair: {'linked': bool, 'counts': [per capture]}}."""
     steps = spec_raw['chain']['steps']
     if len(steps) < 3:
         return None
-    jobs, names = [], []
+    sources = {}  # var -> (step that binds it first, what it reads)
+    for k, st in enumerate(steps):
+        for var, target in (st.get('bind') or {}).items():
+            sources.setdefault(var, (k, target))
+    jobs, names, linked = [], [], {}
     for i in range(len(steps)):
         for j in range(i + 1, len(steps)):
-            pair = dict(spec_raw, chain=dict(spec_raw['chain'], steps=[steps[i], steps[j]]))
+            used = set((steps[j].get('eq') or {})) | {v for k in (steps[j].get('ne') or {}) for v in k.split(',')}
+            first = dict(steps[i])
+            binds = dict(first.get('bind') or {})
+            binds.update({v: sources[v][1] for v in used
+                          if v in sources and v not in binds and sources[v][0] <= i})
+            first['bind'] = binds
+            first.pop('eq', None)
+            first.pop('ne', None)
+            name = 'steps %d-%d' % (i, j)
+            linked[name] = bool(used & set(binds))
+            pair = dict(spec_raw, chain=dict(spec_raw['chain'], steps=[first, steps[j]]))
             pair.pop('presence', None)
             for p, w in zip(off_paths, windows):
                 jobs.append((pair, p) + tuple(w))
-                names.append('steps %d-%d' % (i, j))
+                names.append(name)
     workers = min(len(jobs), os.cpu_count() or 2)
     with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as pool:
         res = list(pool.map(_scan_job, jobs))
     out = {}
     for n, r in zip(names, res):
-        out.setdefault(n, []).append(len(r['chains']))
+        out.setdefault(n, {'linked': linked[n], 'counts': []})['counts'].append(len(r['chains']))
     return out
 
 
@@ -762,10 +783,10 @@ def flags(rep):
         if pr['absent_in_some_background']:
             out.append('13: episode %s values absent from some background: %s'
                        % (name, pr['absent_in_some_background'][:10]))
-    for pair, counts in (rep.get('13_step_pairs_in_background') or {}).items():
-        if not any(counts):
-            out.append('13: chain %s with their links never occur in background: only episodes contain them'
-                       % pair)
+    for pair, v in (rep.get('13_step_pairs_in_background') or {}).items():
+        if v['linked'] and not any(v['counts']):
+            out.append('13: chain %s, linked by a value beyond the key, never occur in background: '
+                       'only episodes contain them' % pair)
     eps = [rep.get('15_18_episodes_default')] + list((rep.get('18_episodes_short') or {}).values())
     for ep in eps:
         if not ep:

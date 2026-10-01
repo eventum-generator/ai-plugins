@@ -44,7 +44,7 @@ A condition is a clause `{"path": p, ...}` with `values` (string match), `regex`
 
 ## Chain
 
-The chain encodes every linking field the README names (an address, a token id inside a message), because the measurements of background pairs and presence see only what the spec links.
+The chain encodes every linking field the README names (an address, a token id inside a message), because the measurements of background pairs and presence see only what the spec links. A value that links every step (an address) is bound at the first step and checked with `eq` at every later one; pairs of later steps inherit it.
 
 | Field | Meaning |
 |---|---|

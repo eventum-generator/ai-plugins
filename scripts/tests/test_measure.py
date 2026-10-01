@@ -117,9 +117,10 @@ class ChainTest(unittest.TestCase):
         rows = [ev(T0, 'login'), dict(ev(T0 + 1, 'token-created'), token='a1'),
                 dict(ev(T0 + 2, 'token-revoked'), message='revoked token b2')]
         pairs = measure.step_pairs(spec, [write(self.dir / 'p.jsonl', rows)], [(None, None)])
-        self.assertEqual(pairs['steps 0-1'], [1])
-        self.assertEqual(pairs['steps 1-2'], [0])  # created and revoked, but never the same token
-        self.assertEqual(pairs['steps 0-2'], [1])
+        self.assertEqual(pairs['steps 0-1']['counts'], [1])
+        self.assertEqual(pairs['steps 1-2']['counts'], [0])
+        self.assertTrue(pairs['steps 1-2']['linked'])  # created and revoked, but never the same token
+        self.assertEqual(pairs['steps 0-2']['counts'], [1])
 
     def test_presence_of_pairs(self):
         spec = dict(CHAIN, presence={'pair': {'paths': ['user.name', 'event.ip']}})
