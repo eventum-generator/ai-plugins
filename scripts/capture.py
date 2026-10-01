@@ -583,7 +583,8 @@ def plan(args, has_chain):
         for h in args.short_interval:
             if h:
                 runs.append(('short-%g' % h, 'short', 'on', h, args.days))
-    runs.append(('long', 'long', 'as-is', None, args.long_days))
+    for i in range(args.long_runs):
+        runs.append(('long' if i == 0 else 'long-%d' % (i + 1), 'long', 'as-is', None, args.long_days))
     runs.append(('long-base', 'base', 'as-is', None, args.long_days))
     runs.append(('check', 'check', 'on' if has_chain else 'as-is', None, args.check_days))
     return runs
@@ -818,6 +819,8 @@ def main():
     r.add_argument('--set', choices=sorted(SETS), default='author')
     r.add_argument('--days', type=int, default=4)
     r.add_argument('--long-days', type=int, default=14)
+    r.add_argument('--long-runs', type=int, default=1,
+                   help='default-configuration runs; more give the README per-run ranges')
     r.add_argument('--check-days', type=int, default=2)
     r.add_argument('--short-interval', type=float, nargs='+', default=[],
                    help='hours: the shortest interval the design admits and any interval the README '
