@@ -805,7 +805,7 @@ def main():
     r.add_argument('--days', type=int, default=4)
     r.add_argument('--long-days', type=int, default=14)
     r.add_argument('--check-days', type=int, default=2)
-    r.add_argument('--short-interval', type=float, nargs='+', default=[6],
+    r.add_argument('--short-interval', type=float, nargs='+', default=[],
                    help='hours: the shortest interval the design admits and any interval the README '
                         'quotes; 0 for none')
     r.add_argument('--carrier', action='append', default=[], help='tag of a carrier input')

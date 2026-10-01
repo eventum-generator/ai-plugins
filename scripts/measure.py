@@ -838,6 +838,8 @@ def report(spec_path, manifest_path):
         rep['18_episodes_short'] = {r['name']: episodes_report([scanned[r['name']]], off, r.get('interval'), window,
                                                                hourly=quiet)
                                     for r in short_runs}
+        if long_ and long_[0]['chains']:  # the default configuration runs the chain: weekends included
+            rep['18_episodes_long'] = episodes_report(long_, off, interval, window, hourly=quiet)
     rep['flags'] = flags(rep)
     rep.pop('_presence_flag', None)
     return rep
@@ -881,7 +883,12 @@ def flags(rep):
             if not v['chains']:
                 out.append('12: no chain in anomaly capture %s' % path)
     for name, pr in (rep.get('13_presence') or {}).items():
-        if pr['absent_in_some_background'] and rep.get('_presence_flag', {}).get(name, True):
+        if not rep.get('_presence_flag', {}).get(name, True):
+            continue
+        thin = [x['value'] for x in pr['lowest'] if x['mean_records_per_capture'] < 5]
+        if thin:
+            out.append('13: episode %s values average below 5 records per background capture: %s' % (name, thin))
+        if pr['absent_in_some_background']:
             out.append('13: episode %s values absent from some background: %s'
                        % (name, pr['absent_in_some_background'][:10]))
     for pair, v in (rep.get('13_step_pairs_in_background') or {}).items():
@@ -895,7 +902,8 @@ def flags(rep):
         if b and a and a['min'] < 0.95 * b['min']:
             out.append('14: %s: anomaly runs go down to %s s between sessions, background never below %s s'
                        % (name, a['min'], b['min']))
-    eps = [rep.get('15_18_episodes_default')] + list((rep.get('18_episodes_short') or {}).values())
+    eps = ([rep.get('15_18_episodes_default'), rep.get('18_episodes_long')]
+           + list((rep.get('18_episodes_short') or {}).values()))
     for ep in eps:
         if not ep:
             continue

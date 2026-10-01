@@ -29,7 +29,7 @@ With a chain:
 | # | Criterion | Failure |
 |---|---|---|
 | 12 | `anomaly_mode: false` produces no complete chain; `true` produces exactly one per episode (strict count, every binding kept). | HIGH |
-| 13 | Presence: every step, and every actor and actor pair an episode can use, occurs in ordinary background of every background capture; nothing occurs only in episodes. | MEDIUM |
+| 13 | Presence: every step, and every actor and actor pair an episode can use, occurs in ordinary background of every background capture; nothing occurs only in episodes. An element averaging below 5 records per capture is LOW. | MEDIUM |
 | 14 | Episodes respect every cap and limit background respects (lockout thresholds, session caps, counters, uniqueness, live-object counts). | MEDIUM |
 | 15 | Around an episode the actor behaves as at the same hour on ordinary days: activity before and after within the range of ordinary days; the episode does not cancel, delay or take over the actor's own work. | MEDIUM |
 | 16 | An episode leaves no state behind: counters, locks, open objects and names in use return on the schedule background uses; nothing stays armed. | MEDIUM |
@@ -60,10 +60,10 @@ Four days hold four default-interval episodes; fourteen days make memory growth 
 - 6: memory growth over the long run beyond the trivial-template baseline, flagged above 10% and 50 MB between its second and last quarter when the peak also exceeds the baseline's by more than 100 MB.
 - 15: the actor's records in the 30 minutes before each episode against the same actor before ordinary background records of the chain's first step and at the same clock time on background days, and after each episode against the actor after ordinary records of the last step; with fewer than about five records per window the ratios carry no signal, and the criterion is judged from the templates.
 - 13: episode values of every `presence` spec in each background capture, and background occurrences of every pair of chain steps; a pair linked by a value beyond the key that only episodes contain is flagged.
-- 14: spacing the actor keeps in background (sessions apart, cooldowns): a `sessions` spec of the actor's repeated action, its minimum gap in `4_5_profile` (background) against `14_profile_anomaly`; a gap only anomaly runs go below is flagged.
-- 8: each invalid parameter value in its own run (`capture.py one --param KEY=VALUE --days 0.1 --name bad-<key>`): exit, exactly one readable ERROR line, no records.
+- 14: spacing the actor keeps in background (sessions apart, cooldowns): a `sessions` spec of the actor's repeated action, its minimum gap in `4_5_profile` (background) against `14_profile_anomaly`; a gap anomaly runs go clearly below (more than 5% under the background minimum) is flagged.
+- 8: each invalid parameter value in its own run (`capture.py one --param KEY=VALUE --days 0.1 --name bad-<key>`): exit 0 (Eventum ends normally after `exhaust`), exactly one readable ERROR line, no records.
 - 17: `17_prefixes_in_background`, completions of the chain's first k steps; counts that stay high up to n-1 steps are a pile-up below the threshold.
-- 18: gaps, first start, start hours, `starts_in_quiet_hours` (hours below a quarter of the busiest), distinct actors and keys per capture; `episodes_at_most` bounds the count a window can hold.
+- 18: gaps, first start, start hours (weekends from the 14-day run, `18_episodes_long`), `starts_in_quiet_hours` (hours below a quarter of the busiest), distinct actors and keys per capture; `episodes_at_most` bounds the count a window can hold.
 
 Criteria 1, 8, 9, 10, 14, 16 and 17 need reading: the sample record against the reference records, the templates, the samples, the README.
 
