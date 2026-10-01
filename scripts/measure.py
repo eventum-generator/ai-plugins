@@ -564,6 +564,8 @@ def profile(results, top=40):
         'class_count': len(classes), 'class_share_pct': shares, 'class_share_pct_per_capture': share_range,
         'class_per_day': {c: round(n / max(1, len(per_day)), 2) for c, n in ranked[:top]},
         'hourly_pct_utc': curve(hours),
+        'hourly_pct_utc_per_capture': [[min(c), max(c)] for c in zip(*[curve(r['hours']) for r in results])]
+        if results else None,
         'groups': {g: {'share_pct': round(100.0 * v['records'] / total, 2) if total else 0,
                        'share_pct_per_capture': (lambda per: [round(min(per), 2), round(max(per), 2)] if per else None)(
                            [100.0 * r['groups'][g]['records'] / r['records'] for r in results if r['records']]),
