@@ -67,6 +67,7 @@ python3 <scripts>/measure.py report .content-design/<name>/measure.json .content
 
 - `--carrier <tag>` once per carrier tag; `--short-interval` takes the shortest interval the parameter range admits, when it is below the default, and every other interval the README quotes; `live --spec <measure.json>` for native output.
 - A parameter variant is a full set of its own: `run --param KEY=VALUE --out <another dir>`.
+- Speed gate: the author set finishes within about 3 minutes of wall time (`manifest.json` `wall_s`) on an idle host; a slower generator is made faster first (Speed in `references/generator-rules.md`), because every later run and review pays for it.
 - What each run and number proves is in the acceptance criteria (Captures, Measurements). Every flag is a defect to fix; the other numbers are judged in phase 4. After a fix, rerun the set: runs execute in parallel and are cheap next to a missed defect. Keep `report.json` and the captures until the README is written.
 
 ### 4. Self-check
@@ -75,7 +76,7 @@ Go through `../review-generator/references/acceptance.md` against the generator 
 
 ### 5. Document
 
-The README per `references/generator-rules.md`: every number from `report.json`, the sample record from `measure.py sample .content-design/<name>/captures/long.jsonl.gz` (the middle record by default; `--contains` picks a class). Then delete the captures.
+The README per `references/generator-rules.md`: every measured figure from `measure.py readme .content-design/<name>/report.json`, checked with `measure.py check-readme`; the sample record from `measure.py sample .content-design/<name>/captures/long.jsonl.gz` (the middle record by default; `--contains` picks a class). Then delete the captures.
 
 ### 6. Hand over
 
