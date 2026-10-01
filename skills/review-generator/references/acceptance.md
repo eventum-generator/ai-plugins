@@ -22,7 +22,7 @@ A generator is accepted when no finding is MEDIUM or HIGH. Each criterion names 
 | 8 | Every template branch emits a record; every sample column read exists; every parameter and sample is validated with one readable error. | MEDIUM |
 | 9 | Samples are realistic but fake (documentation or private addresses, example domains, synthetic names). | HIGH if real data, else LOW |
 | 10 | The README follows the section order of `../../create-generator/references/generator-rules.md`, describes the generated data only, its sample is a generated record (the field set, formats and value domains of a fresh record of that class; captures are random, so bytes cannot be compared), its commands run as written. | LOW; MEDIUM if a claim about behaviour is false |
-| 11 | Every measured README figure comes from `measure.py readme`, and `measure.py check-readme` against the review report finds no mismatch; a false shape (a peak hour, an absent class) is a finding too. | LOW |
+| 11 | Every measured README figure comes from `measure.py readme` (the Event Types table and the figure table), and `measure.py check-readme` against the review report finds no mismatch; a measured range in prose, or a false shape (a peak hour, an absent class), is a finding too. | LOW |
 
 With a chain:
 

@@ -1040,9 +1040,10 @@ def digest(root, previous=None):
 # --- README numbers ----------------------------------------------------------
 
 
-def _round(x, up, share):
-    """Two significant digits (one decimal for shares from 0.1), moved outward
-    only where rounding to nearest would cross x."""
+def _round(x, up, share, bound=None):
+    """Two significant digits (one decimal for shares from 0.1, three from 1000),
+    to nearest; moved outward only where nearest would cross `bound` (a measured
+    value) - or x itself when no bound is given."""
     import math
     if x == 0:
         return 0.0
@@ -1051,21 +1052,29 @@ def _round(x, up, share):
     else:  # two significant digits, three from 1000 so counts keep their shape
         d = (2 if abs(x) >= 1000 else 1) - int(math.floor(math.log10(abs(x))))
     q = 10.0 ** -d
+    limit = x if bound is None else bound
     v = round(x / q) * q
-    if up and v < x:
+    if up and v < limit:
         v += q
-    if not up and v > x:
+    if not up and v > limit:
         v -= q
     return round(v, max(d, 0))
 
 
 def fmt_range(values, share=False):
-    """README range containing every measured value, rounded per the rule."""
+    """README range: the measured values widened by a margin for run-to-run spread
+    (each end by (max/min) ** 0.25, so a stable value stays tight and a variable one
+    never reaches zero), rounded per the rule."""
     values = [v for v in values if v is not None]
     if not values:
         return None
-    lo, hi = min(values), max(values)
-    a, b = _round(lo, False, share), _round(hi, True, share)
+    m_lo, m_hi = lo, hi = min(values), max(values)
+    if lo > 0 and hi > lo:
+        k = (hi / lo) ** 0.25
+        lo, hi = lo / k, hi * k
+    elif hi > 0 and lo == 0:
+        hi *= 1.25
+    a, b = _round(lo, False, share, m_lo), _round(hi, True, share, m_hi)
     text = lambda v: ('%g' % v)  # noqa: E731
     return text(a) if a == b else '%s-%s' % (text(a), text(b))
 
@@ -1136,16 +1145,85 @@ def readme_numbers(reports):
     return out
 
 
-def check_readme(readme, reports):
-    """Event-type rows of the README table whose share range misses a measured
-    per-capture share; returns mismatches."""
+def readme_table(reports):
+    """Markdown table rows `| figure | range |` for every measured figure that has no
+    natural place in the event-type table; check-readme verifies these rows."""
     nums = readme_numbers(reports)
-    measured = {}
+    rows = []
+
+    def add(label, value):
+        if value:
+            rows.append('| %s | %s |' % (label, value))
+    add('records per day', nums.get('records_per_day'))
+    add('records per weekday', nums.get('records_per_weekday'))
+    add('records per weekend day', nums.get('records_per_weekend'))
+    for g, v in (nums.get('groups_default') or {}).items():
+        add('%s share %%' % g, v.get('share_pct'))
+    for g, v in (nums.get('groups_per_weekday') or {}).items():
+        add('%s per weekday' % g, v)
+    for g, v in (nums.get('groups_per_weekend') or {}).items():
+        add('%s per weekend day' % g, v)
+    for g, v in (nums.get('groups_background_share_pct') or {}).items():
+        add('%s share %% (background)' % g, v)
+    for n, v in (nums.get('ratios_background_pct') or {}).items():
+        add('%s %% (background)' % n, v)
+    for n, v in (nums.get('sequence_p50_s') or {}).items():
+        add('%s median s' % n, v)
+    for n, v in (nums.get('session_gap_min_s') or {}).items():
+        add('%s minimum gap s' % n, v)
+    add('episode gaps h', nums.get('episode_gaps_h'))
+    add('episode spans s', nums.get('episode_spans_s'))
+    add('episode start hours UTC', nums.get('episode_start_hours_utc'))
+    for k, v in (nums.get('background_step_pairs') or {}).items():
+        add('background chain %s' % k, v)
+    return '| Figure | Range |\n|---|---|\n' + '\n'.join(rows) + '\n'
+
+
+def _raw(reports):
+    """figure label -> measured values, the same figures readme_table renders."""
+    vals = {}
     for r in reports:
-        p = r.get('11_profile_default')
-        if p:
-            for c, (lo, hi) in p['class_share_pct_per_capture'].items():
-                measured.setdefault(c, []).extend([lo, hi])
+        p = r.get('11_profile_default') or {}
+        for c, (lo, hi) in (p.get('class_share_pct_per_capture') or {}).items():
+            vals.setdefault(c, []).extend([lo, hi])
+        if p.get('per_day_utc'):
+            vals.setdefault('records per day', []).extend([p['per_day_utc']['min'], p['per_day_utc']['max']])
+        for d, v in (p.get('per_weekday_utc') or {}).items():
+            key = 'records per weekend day' if d in ('Sat', 'Sun') else 'records per weekday'
+            vals.setdefault(key, []).extend([v['min'], v['max']])
+        for g, v in (p.get('groups') or {}).items():
+            vals.setdefault('%s share %%' % g, []).extend(v.get('share_pct_per_capture') or [])
+        for g, days in (p.get('groups_per_weekday') or {}).items():
+            for d, v in days.items():
+                key = '%s per weekend day' % g if d in ('Sat', 'Sun') else '%s per weekday' % g
+                vals.setdefault(key, []).extend([v['min'], v['max']])
+        b = r.get('4_5_profile') or {}
+        for g, v in (b.get('groups') or {}).items():
+            vals.setdefault('%s share %% (background)' % g, []).extend(v.get('share_pct_per_capture') or [])
+        for n, v in (b.get('ratios_pct') or {}).items():
+            if v:
+                vals.setdefault('%s %% (background)' % n, []).extend([v['min_pct'], v['max_pct']])
+        for n, v in (b.get('sequence_delays_s') or {}).items():
+            if v:
+                vals.setdefault('%s median s' % n, []).append(v['p50'])
+        for n, v in (b.get('session_gaps_s') or {}).items():
+            if v:
+                vals.setdefault('%s minimum gap s' % n, []).append(v['min'])
+        for k in ('15_18_episodes_default', '18_episodes_long'):
+            for c in (r.get(k) or {}).get('captures', []):
+                vals.setdefault('episode gaps h', []).extend(c['gaps_hours'])
+                vals.setdefault('episode spans s', []).extend(c['spans_seconds'])
+                vals.setdefault('episode start hours UTC', []).extend(c.get('start_hours_utc', []))
+        for k, v in (r.get('13_step_pairs_in_background') or {}).items():
+            if isinstance(v, dict):
+                vals.setdefault('background chain %s' % k, []).extend(v['counts'])
+    return vals
+
+
+def check_readme(readme, reports):
+    """README table rows (event types and the generated figure table) whose range
+    misses a measured value of the given reports."""
+    measured = _raw(reports)
     out = []
     with open(readme, encoding='utf-8') as fh:
         for line in fh:
@@ -1155,15 +1233,17 @@ def check_readme(readme, reports):
             name = next((c for c in cells if c in measured), None)
             if not name:
                 continue
-            m = re.search(r'([\d.]+)\s*(?:-|–)\s*([\d.]+)\s*%', line) or re.search(r'([\d.]+)\s*%', line)
+            rest = line.split(name, 1)[1]
+            m = re.search(r'([\d.,]+)\s*(?:-|–)\s*([\d.,]+)', rest) or re.search(r'([\d.,]+)', rest)
             if not m:
                 continue
-            lo = float(m.group(1))
-            hi = float(m.group(2)) if m.lastindex == 2 else lo
+            lo = float(m.group(1).replace(',', ''))
+            hi = float(m.group(2).replace(',', '')) if m.lastindex == 2 else lo
             bad = [v for v in measured[name] if v < lo - 1e-9 or v > hi + 1e-9]
             if bad:
-                out.append({'class': name, 'readme': m.group(0), 'measured': [min(measured[name]), max(measured[name])],
-                            'suggested': nums.get('class_share_pct', {}).get(name)})
+                out.append({'figure': name, 'readme': m.group(0), 'measured': [min(measured[name]), max(measured[name])],
+                            'suggested': fmt_range(measured[name], share='share' in name or '%' in name or
+                                                   name not in ('records per day',) and '%' in line)})
     return out
 
 
@@ -1195,6 +1275,7 @@ def main():
     s.add_argument('--contains')
     rd = sub.add_parser('readme', help='every README figure as a range, from report files')
     rd.add_argument('reports', nargs='+')
+    rd.add_argument('--markdown', action='store_true', help='the figure table for the README')
     ck = sub.add_parser('check-readme', help='README event-type shares against report files')
     ck.add_argument('readme')
     ck.add_argument('reports', nargs='+')
@@ -1251,7 +1332,10 @@ def main():
             with open(path, encoding='utf-8') as fh:
                 reps.append(json.load(fh))
         if args.cmd == 'readme':
-            emit(readme_numbers(reps))
+            if args.markdown:
+                sys.stdout.write(readme_table(reps))
+            else:
+                emit(readme_numbers(reps))
             return 0
         bad = check_readme(args.readme, reps)
         emit({'mismatches': bad})

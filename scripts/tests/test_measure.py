@@ -234,10 +234,10 @@ class ParseProfileTest(unittest.TestCase):
 class ReadmeRangeTest(unittest.TestCase):
     def test_rounding_rule(self):
         self.assertEqual(measure.fmt_range([7.81, 7.89], share=True), '7.8-7.9')
-        self.assertEqual(measure.fmt_range([32, 100]), '32-100')
-        self.assertEqual(measure.fmt_range([3.28, 7.38], share=True), '3.2-7.4')
-        self.assertEqual(measure.fmt_range([0.054, 0.154], share=True), '0.054-0.2')
-        self.assertEqual(measure.fmt_range([1093, 1161]), '1090-1170')
+        self.assertEqual(measure.fmt_range([32, 100]), '24-130')       # margin, never zero
+        self.assertEqual(measure.fmt_range([3.28, 7.38], share=True), '2.7-9')
+        self.assertEqual(measure.fmt_range([1093, 1161]), '1080-1180')
+        self.assertEqual(measure.fmt_range([0, 7]), '0-8.8')
         self.assertEqual(measure.fmt_range([5, 5]), '5')
 
 
