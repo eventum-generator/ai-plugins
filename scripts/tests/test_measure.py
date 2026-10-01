@@ -131,6 +131,11 @@ class ChainTest(unittest.TestCase):
         self.assertEqual(rep['pair']['absent_in_some_background'], ['alice|1'])
         self.assertEqual(rep['actor']['absent_in_some_background'], [])
 
+    def test_prefixes_count_partial_chains(self):
+        rows = [ev(T0, 'fail'), ev(T0 + 1, 'fail'), ev(T0 + 2, 'login', risk=10)]
+        pre = measure.prefixes(CHAIN, [write(self.dir / 'pre.jsonl', rows)], [(None, None)])
+        self.assertEqual(pre, {'first 2 steps': [1]})
+
     def test_accept_report(self):
         off = self.scan([ev(T0, 'fail'), ev(T0 + 2, 'login', risk=90)])
         on = measure.scan(CHAIN, write(self.dir / 'on.jsonl', [
@@ -199,6 +204,18 @@ class ParseProfileTest(unittest.TestCase):
         self.assertEqual(res['order_breaks'], 1)
         prof = measure.profile([res])
         self.assertEqual(prof['groups']['failures']['share_pct'], 33.33)
+
+
+class DiffTest(unittest.TestCase):
+    def test_diff_shows_changed_lines(self):
+        a, b = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
+        (a / 'generator.yml').write_text('x: 1\n')
+        (b / 'generator.yml').write_text('x: 2\n')
+        (b / 'README.md').write_text('new\n')
+        out = measure.diff(str(a), str(b))
+        self.assertIn('-x: 1', out)
+        self.assertIn('+x: 2', out)
+        self.assertIn('current/README.md', out)
 
 
 class DigestTest(unittest.TestCase):

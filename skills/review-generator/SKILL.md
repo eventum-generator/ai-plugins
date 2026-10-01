@@ -12,7 +12,7 @@ An independent acceptance review: fresh captures measured against the acceptance
 - Run in a context that did not build the generator (a subagent or a new session); the author's notes and reports are claims to verify, not evidence.
 - `python3 <skill dir>/../../scripts/capture.py doctor` reports `ok`.
 - Inputs: the generator directory (for a content-pack PR: `gh pr checkout <number>` in a worktree of a content-packs clone); `.content-design/<name>/brief.md` and `reference/` for the native format when they exist (otherwise the README's references); `measure.json` when it exists (otherwise write it from the README per `../create-generator/references/measure-spec.md`).
-- The review writes only `.content-design/<name>/review.md`, `review-digest.json`, `review-report.json`, `captures/review/`, `measure.json` when it was missing, and its feedback.
+- The review writes only `.content-design/<name>/review.md` (earlier ones kept as `review-<n>.md`), `review-digest.json`, `review-report.json`, `reviewed/` (a copy of the reviewed files), `captures/review/`, `measure.json` when it was missing, and its feedback.
 
 ## References
 
@@ -25,7 +25,7 @@ An independent acceptance review: fresh captures measured against the acceptance
 
 ## Process
 
-1. **Record the files** - `python3 <scripts>/measure.py digest <generator> --save .content-design/<name>/review-digest.json`, adding `--previous <old review-digest.json>` on a re-review: only the changed and added files need reading again; every measurement is rerun.
+1. **Record the files** - `python3 <scripts>/measure.py digest <generator> --save .content-design/<name>/review-digest.json --copy .content-design/<name>/reviewed`. On a re-review, first keep the previous `review.md` as `review-<n>.md` and read `python3 <scripts>/measure.py diff .content-design/<name>/reviewed <generator>`: the diff and the previous findings decide what to read again; every measurement is rerun, and the new review states for each previous finding whether it is resolved.
 2. **Read** `generator.yml`, templates, samples and inputs against the criteria: format against the reference records, rate and rhythm, template branches, parameter validation, state bounds, and with a chain the guard and episode logic. Check that `measure.json` encodes every class, group, linking field and actor pair the README names, and complete it where it does not. Note what the measurements must confirm.
 3. **Capture** - `python3 <scripts>/capture.py run <generator> --out .content-design/<name>/captures/review --set review` and `capture.py live` into the same directory, with every carrier tag (`--carrier`), the shortest admitted interval and every interval the README quotes (`--short-interval`), and `live --spec <measure.json>` for native output.
 4. **Measure** - `python3 <scripts>/measure.py report <measure.json> <captures/review/manifest.json> --save .content-design/<name>/review-report.json`; a parameter variant is a full set of its own (`capture.py run --param KEY=VALUE --out <another dir>`); every flag is a finding; judge the other numbers by `references/acceptance.md`; check every README number and command.

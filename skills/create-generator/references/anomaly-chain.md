@@ -32,7 +32,7 @@ Episodes of one key are separated by more than the chain window; within an episo
 
 An episode is ordinary activity of its actor with the chain inside:
 
-- within every cap and limit background respects, from addresses and hosts of its population's pool;
+- within every cap, limit and spacing background respects (sessions of one actor at least as far apart as in background), from addresses and hosts of its population's pool;
 - before and after it, the actor behaves as at the same hour on ordinary days;
 - it leaves every state (counters, locks, open objects, names in use) as an ordinary session would, and never cancels, delays or takes over the actor's own work.
 

@@ -11,6 +11,9 @@
         a step or a key.
     measure.py sample CAPTURE [--nth N] [--contains TEXT]
         One record printed byte for byte, for a README sample.
+    measure.py diff OLD_DIR NEW_DIR
+        Unified diff of two generator directories (a reviewed copy and the
+        current files), for a re-review.
     measure.py digest GENERATOR [--previous DIGEST.json]
         Hash of the generator's files, per file and in total, and the
         files changed since a previous digest.
@@ -589,7 +592,7 @@ def episodes_report(on, off, interval_h, window_start, around=1800):
             expected = 1 + int((hi - s_times[0]) // (interval_h * 3600))
         out['captures'].append({
             'path': r['path'], 'episodes': len(starts),
-            'episodes_expected_after_first': expected, 'first_start_hours': first,
+            'episodes_at_most': expected, 'first_start_hours': first,
             'gaps_hours': gaps, 'gap_tolerance_hours': None if w is None else round(w / 2, 2),
             'gaps_outside_tolerance': [g for g in gaps if w is not None and abs(g - interval_h) > w / 2],
             'start_hours_utc': [int(t // 3600 % 24) for t in s_times],
@@ -624,24 +627,20 @@ def presence(off, on):
 
 def step_pairs(spec_raw, off_paths, windows):
     """Background occurrences of every ordered pair of chain steps within the chain
-    window. A variable the second step checks (eq / ne) and the chain binds at or
-    before the first step is bound there from the same field its binding step reads,
-    so a pair keeps every link the chain gives it. Returns {pair: {'linked': bool, 'counts': [per capture]}}."""
+    window. A variable the second step checks (eq / ne) is bound at the first step
+    when that step binds it or checks it with eq (its record carries the value), so
+    a pair keeps every link its own two records carry. Returns {pair: {'linked': bool, 'counts': [per capture]}}."""
     steps = spec_raw['chain']['steps']
     if len(steps) < 3:
         return None
-    sources = {}  # var -> (step that binds it first, what it reads)
-    for k, st in enumerate(steps):
-        for var, target in (st.get('bind') or {}).items():
-            sources.setdefault(var, (k, target))
     jobs, names, linked = [], [], {}
     for i in range(len(steps)):
         for j in range(i + 1, len(steps)):
             used = set((steps[j].get('eq') or {})) | {v for k in (steps[j].get('ne') or {}) for v in k.split(',')}
             first = dict(steps[i])
             binds = dict(first.get('bind') or {})
-            binds.update({v: sources[v][1] for v in used
-                          if v in sources and v not in binds and sources[v][0] <= i})
+            # the first step's record carries a value it checks with eq: bind it from there
+            binds.update({v: t for v, t in (first.get('eq') or {}).items() if v in used and v not in binds})
             first['bind'] = binds
             first.pop('eq', None)
             first.pop('ne', None)
@@ -659,6 +658,48 @@ def step_pairs(spec_raw, off_paths, windows):
     for n, r in zip(names, res):
         out.setdefault(n, {'linked': linked[n], 'counts': []})['counts'].append(len(r['chains']))
     return out
+
+
+def prefixes(spec_raw, off_paths, windows):
+    """Background completions of every proper prefix of the chain (2..n-1 steps):
+    a count that stays high up to n-1 and drops to 0 at n is a pile-up below the
+    chain threshold."""
+    steps = spec_raw['chain']['steps']
+    if len(steps) < 3:
+        return None
+    jobs, names = [], []
+    for k in range(2, len(steps)):
+        pre = dict(spec_raw, chain=dict(spec_raw['chain'], steps=steps[:k]))
+        pre.pop('presence', None)
+        for p, w in zip(off_paths, windows):
+            jobs.append((pre, p) + tuple(w))
+            names.append('first %d steps' % k)
+    workers = min(len(jobs), os.cpu_count() or 2)
+    with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as pool:
+        res = list(pool.map(_scan_job, jobs))
+    out = {}
+    for n, r in zip(names, res):
+        out.setdefault(n, []).append(len(r['chains']))
+    return out
+
+
+def diff(old_dir, new_dir):
+    """Unified diff of the text files of two generator directories."""
+    import difflib
+    old, new = digest(old_dir)['files'], digest(new_dir)['files']
+    out = []
+    for rel in sorted(set(old) | set(new)):
+        if old.get(rel) == new.get(rel):
+            continue
+        texts = []
+        for root, files in ((old_dir, old), (new_dir, new)):
+            if rel not in files:
+                texts.append([])
+                continue
+            with open(os.path.join(root, rel), encoding='utf-8', errors='replace') as fh:
+                texts.append(fh.readlines())
+        out.extend(difflib.unified_diff(texts[0], texts[1], 'reviewed/' + rel, 'current/' + rel))
+    return ''.join(out)
 
 
 def _growth(run):
@@ -716,6 +757,7 @@ def report(spec_path, manifest_path):
         'carrier_excluded': chk.get('carrier_excluded')}
     rep['4_5_profile'] = profile(off) if off else (profile(long_) if long_ else None)
     rep['11_profile_default'] = profile(long_) if long_ else None
+    rep['14_profile_anomaly'] = profile(on) if on else None
     rep['6_state'] = state_growth(runs['long'], runs.get('long-base')) if 'long' in runs else None
     live_path = os.path.join(os.path.dirname(manifest_path), 'live.json')
     if os.path.exists(live_path):
@@ -732,6 +774,8 @@ def report(spec_path, manifest_path):
         rep['12_chains'] = chains_report(off, on + short)
         rep['13_presence'] = presence(off, on + short)
         off_caps = [r for r in caps if r['kind'] == 'off']
+        offw = [(parse_time(r['window_start']), parse_time(r['window_end'])) for r in off_caps]
+        rep['17_prefixes_in_background'] = prefixes(spec_raw, [r['capture'] for r in off_caps], offw)
         rep['13_step_pairs_in_background'] = step_pairs(
             spec_raw, [r['capture'] for r in off_caps],
             [(parse_time(r['window_start']), parse_time(r['window_end'])) for r in off_caps])
@@ -850,10 +894,14 @@ def main():
     s.add_argument('capture')
     s.add_argument('--nth', type=int, help='default: the middle matching record')
     s.add_argument('--contains')
+    df = sub.add_parser('diff', help='unified diff of two generator directories')
+    df.add_argument('old')
+    df.add_argument('new')
     d = sub.add_parser('digest')
     d.add_argument('generator')
     d.add_argument('--previous')
     d.add_argument('--save')
+    d.add_argument('--copy', help='also copy the hashed files here (a reviewed snapshot)')
     args = ap.parse_args()
     if args.cmd == 'report':
         rep = report(args.spec, args.manifest)
@@ -893,8 +941,19 @@ def main():
                 sys.stdout.buffer.write(line if line.endswith(b'\n') else line + b'\n')
                 return 0
         return 1
+    if args.cmd == 'diff':
+        sys.stdout.write(diff(args.old, args.new))
+        return 0
     if args.cmd == 'digest':
         out = digest(args.generator, args.previous)
+        if args.copy:
+            import shutil
+            if os.path.exists(args.copy):
+                shutil.rmtree(args.copy)
+            for rel in out['files']:
+                dst = os.path.join(args.copy, rel)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(os.path.join(args.generator, rel), dst)
         if args.save:
             with open(args.save, 'w', encoding='utf-8') as fh:
                 json.dump(out, fh, indent=1)

@@ -811,7 +811,7 @@ def main():
     r.add_argument('--carrier', action='append', default=[], help='tag of a carrier input')
     o = sub.add_parser('one', parents=[common], help='one bounded run')
     o.add_argument('--name', required=True)
-    o.add_argument('--days', type=int, default=4)
+    o.add_argument('--days', type=float, default=4)
     o.add_argument('--mode', choices=['on', 'off', 'as-is'], default='as-is')
     o.add_argument('--interval', type=float)
     lv = sub.add_parser('live', parents=[common], help='live-mode check')

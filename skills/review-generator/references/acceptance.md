@@ -22,7 +22,7 @@ A generator is accepted when no finding is MEDIUM or HIGH. Each criterion names 
 | 8 | Every template branch emits a record; every sample column read exists; every parameter and sample is validated with one readable error. | MEDIUM |
 | 9 | Samples are realistic but fake (documentation or private addresses, example domains, synthetic names). | HIGH if real data, else LOW |
 | 10 | The README follows the section order of `../../create-generator/references/generator-rules.md`, describes the generated data only, its sample is a generated record (the field set, formats and value domains of a fresh record of that class; captures are random, so bytes cannot be compared), its commands run as written. | LOW; MEDIUM if a claim about behaviour is false |
-| 11 | Every number in the README matches the measurement report (shares, per-day counts, ranges, spans, gaps, start hours). | LOW |
+| 11 | Every number in the README matches measured output within run-to-run variation: a fresh capture may fall slightly outside an author's range; a figure off by more than the spread between captures, or a false shape (a peak hour, an absent class), is a finding. | LOW |
 
 With a chain:
 
@@ -60,7 +60,9 @@ Four days hold four default-interval episodes; fourteen days make memory growth 
 - 6: memory growth over the long run beyond the trivial-template baseline, above 10% and 50 MB between its second and last quarter.
 - 15: the actor's records in the 30 minutes before each episode against the same actor before ordinary background records of the chain's first step and at the same clock time on background days, and after each episode against the actor after ordinary records of the last step; with fewer than about five records per window the ratios carry no signal, and the criterion is judged from the templates.
 - 13: episode values of every `presence` spec in each background capture, and background occurrences of every pair of chain steps; a pair linked by a value beyond the key that only episodes contain is flagged.
-- 18: gaps, first start, start hours, distinct actors and keys per capture.
+- 14: spacing the actor keeps in background (sessions apart, cooldowns): a `sequences` timing of the actor's repeated action compared between `4_5_profile` (background) and `14_profile_anomaly`; a minimum only anomaly runs go below is a finding.
+- 17: `17_prefixes_in_background`, completions of the chain's first k steps; counts that stay high up to n-1 steps are a pile-up below the threshold.
+- 18: gaps, first start, start hours, distinct actors and keys per capture; `episodes_at_most` bounds the count a window can hold.
 
 Criteria 1, 8, 9, 10, 14, 16 and 17 need reading: the sample record against the reference records, the templates, the samples, the README.
 
