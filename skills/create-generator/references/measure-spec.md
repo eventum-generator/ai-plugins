@@ -33,7 +33,7 @@
 | `class` | Value spec of the event class whose shares the README table states. |
 | `groups` | Named conditions: populations, outcomes or anything with a share and an hourly curve to report. |
 | `actor` | Value spec of the entity an episode is attributed to: its presence in background and its activity around episodes are measured. |
-| `presence` | Named value specs of further entities an episode uses (`{"pair": {"paths": ["user.name", "source.ip"]}}`), or `{"value": spec, "when": condition}` to count only some records (the successful logins of a spray): each value episodes use is counted in every background capture. `actor` is included. |
+| `presence` | Named value specs of further entities an episode uses (`{"pair": {"paths": ["user.name", "source.ip"]}}`), or `{"value": spec, "when": condition}` to count only some records (the successful logins of a spray), with `"flag": false` for a value the criteria do not require in background (a rotating target): each value episodes use is counted in every background capture, from records that carry the chain key. `actor` is included. |
 | `sequences` | Named timings `{"group": value spec, "from": condition, "to": condition}`: the delay from a `from` record to the next `to` record of the same group (a job's start to its report), reported as quantiles; they check the delays the brief states. |
 | `sessions` | Named session gaps `{"group": value spec, "match": condition, "gap": seconds}`: records of one group closer than `gap` form a session; the quiet time between sessions is reported as quantiles (the spacing an actor keeps between bursts). |
 | `day_start_hour` | UTC hour at which a counted day starts (default 0); 12 keeps a night of scheduled jobs in one day. |

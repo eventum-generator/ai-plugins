@@ -190,11 +190,14 @@ class Spec:
         if raw.get('actor'):
             pres.setdefault('actor', raw['actor'])
         self.presence = {}
-        for n, v in pres.items():  # a value spec, or {"value": spec, "when": condition}
+        self.presence_flag = {}
+        for n, v in pres.items():  # a value spec, or {"value": spec, "when": condition, "flag": bool}
             if 'value' in v:
                 self.presence[n] = (compile_value(v['value']), compile_cond(v.get('when')))
+                self.presence_flag[n] = v.get('flag', True)
             else:
                 self.presence[n] = (compile_value(v), None)
+                self.presence_flag[n] = True
         self.day_shift = float(raw.get('day_start_hour', 0)) * 3600
         self.sequences = {n: (compile_value(v['group']), compile_cond(v['from']), compile_cond(v['to']))
                           for n, v in (raw.get('sequences') or {}).items()}
@@ -477,6 +480,13 @@ def full_days(res):
     return out
 
 
+def _by_weekday(pairs):
+    out = {}
+    for day, n in pairs:
+        out.setdefault(datetime.strptime(day, '%Y-%m-%d').strftime('%a'), []).append(n)
+    return {d: {'min': min(v), 'max': max(v)} for d, v in out.items()}
+
+
 def full_days_of(res, days):
     """(day, count) of `days` restricted to the days wholly inside the capture window."""
     inside = {d for d, _ in full_days(res)}
@@ -533,6 +543,8 @@ def profile(results, top=40):
         'groups_per_day': {g: (lambda v: {'min': min(v), 'median': statistics.median(v), 'max': max(v)}
                                if v else None)([n for r in results for d, n in full_days_of(r, r['group_days'][g])])
                            for g in (results[0]['group_days'] if results else {})},
+        'groups_per_weekday': {g: _by_weekday([(d, n) for r in results for d, n in full_days_of(r, r['group_days'][g])])
+                               for g in (results[0]['group_days'] if results else {})},
         'unparsed': sum(r['unparsed'] for r in results),
         'no_time': sum(r['no_time'] for r in results),
         'order_breaks': sum(r['order_breaks'] for r in results),
@@ -657,7 +669,9 @@ def presence(off, on):
         lows = sorted((min(c), v) for v, c in counts.items())[:10]
         out[name] = {'episode_values': len(used),
                      'absent_in_some_background': sorted(v for v, c in counts.items() if min(c or [0]) == 0),
-                     'lowest': [{'value': v, 'min_records_per_capture': n} for n, v in lows]}
+                     'lowest': [{'value': v, 'min_records_per_capture': n,
+                                 'mean_records_per_capture': round(statistics.mean(counts[v]), 1)}
+                                for n, v in lows]}
     return out
 
 
@@ -811,6 +825,7 @@ def report(spec_path, manifest_path):
     if man.get('has_chain') and spec_raw.get('chain'):
         rep['12_chains'] = chains_report(off, on + short)
         rep['13_presence'] = presence(off, on + short)
+        rep['_presence_flag'] = Spec(spec_raw).presence_flag
         off_caps = [r for r in caps if r['kind'] == 'off']
         offw = [(parse_time(r['window_start']), parse_time(r['window_end'])) for r in off_caps]
         rep['17_prefixes_in_background'] = prefixes(spec_raw, [r['capture'] for r in off_caps], offw)
@@ -824,6 +839,7 @@ def report(spec_path, manifest_path):
                                                                hourly=quiet)
                                     for r in short_runs}
     rep['flags'] = flags(rep)
+    rep.pop('_presence_flag', None)
     return rep
 
 
@@ -865,13 +881,20 @@ def flags(rep):
             if not v['chains']:
                 out.append('12: no chain in anomaly capture %s' % path)
     for name, pr in (rep.get('13_presence') or {}).items():
-        if pr['absent_in_some_background']:
+        if pr['absent_in_some_background'] and rep.get('_presence_flag', {}).get(name, True):
             out.append('13: episode %s values absent from some background: %s'
                        % (name, pr['absent_in_some_background'][:10]))
     for pair, v in (rep.get('13_step_pairs_in_background') or {}).items():
         if v['linked'] and not any(v['counts']):
             out.append('13: chain %s, linked by a value beyond the key, never occur in background: '
                        'only episodes contain them' % pair)
+    bg = (rep.get('4_5_profile') or {}).get('session_gaps_s') or {}
+    an = (rep.get('14_profile_anomaly') or {}).get('session_gaps_s') or {}
+    for name, b in bg.items():
+        a = an.get(name)
+        if b and a and a['min'] < 0.95 * b['min']:
+            out.append('14: %s: anomaly runs go down to %s s between sessions, background never below %s s'
+                       % (name, a['min'], b['min']))
     eps = [rep.get('15_18_episodes_default')] + list((rep.get('18_episodes_short') or {}).values())
     for ep in eps:
         if not ep:
