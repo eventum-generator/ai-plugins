@@ -672,6 +672,9 @@ def cmd_one(args):
     if args.expect_error:  # an invalid parameter or sample: one readable error, nothing written
         rec['expected_error_ok'] = (rec.get('exit') == 0 and rec.get('log_lines') == 1
                                     and not rec.get('lines'))
+        if rec.get('log'):
+            first = log_lines(rec['log'])
+            rec['error_line'] = first[0][:400] if first else None
         print(json.dumps(rec, indent=1))
         return 0 if rec['expected_error_ok'] else 1
     print(json.dumps(rec, indent=1))
