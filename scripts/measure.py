@@ -528,21 +528,29 @@ def quantiles(values):
 
 
 def drift(results):
-    """Classes whose daily rate in the second half of a capture differs from the
-    first half by more than 2.5x (pools that fill, counters that saturate)."""
+    """Classes whose daily rate on comparable days (weekdays with weekdays,
+    weekends with weekends) changes by more than 2.5x between the first and
+    second half of a capture, with at least 20 records behind the comparison:
+    pools that fill, counters that saturate."""
     out = {}
     for r in results:
         days = [d for d, _ in full_days(r)]
         if len(days) < 6:
             continue
         half = len(days) // 2
-        first, second = days[:half], days[half:]
         for c in r['classes']:
-            a = sum(r['class_days'].get(d, {}).get(c, 0) for d in first) / len(first)
-            b = sum(r['class_days'].get(d, {}).get(c, 0) for d in second) / len(second)
-            if a + b >= 2 and (max(a, b) > 2.5 * max(min(a, b), 0.1)):
-                out[c] = {'first_half_per_day': round(a, 2), 'second_half_per_day': round(b, 2),
-                          'capture': r['path']}
+            for kind in ('weekday', 'weekend'):
+                def pick(ds):
+                    return [d for d in ds if (datetime.strptime(d, '%Y-%m-%d').weekday() >= 5) == (kind == 'weekend')]
+                first, second = pick(days[:half]), pick(days[half:])
+                if not first or not second:
+                    continue
+                na = sum(r['class_days'].get(d, {}).get(c, 0) for d in first)
+                nb = sum(r['class_days'].get(d, {}).get(c, 0) for d in second)
+                a, b = na / len(first), nb / len(second)
+                if na + nb >= 20 and max(a, b) > 2.5 * max(min(a, b), 0.1):
+                    out[c] = {'first_half_per_day': round(a, 2), 'second_half_per_day': round(b, 2),
+                              'days': kind, 'capture': r['path']}
     return out
 
 
@@ -1080,6 +1088,13 @@ def readme_numbers(reports):
         out['class_per_day'] = {c: fmt_range(vals([p.get('class_per_day', {}).get(c) for p in default])) for c in classes}
         out['records_per_day'] = fmt_range([p['per_day_utc'][k] for p in default if p.get('per_day_utc')
                                             for k in ('min', 'max')])
+        for kind, names in (('weekday', ('Mon', 'Tue', 'Wed', 'Thu', 'Fri')), ('weekend', ('Sat', 'Sun'))):
+            out['records_per_%s' % kind] = fmt_range([v[k] for p in default for d, v in (p.get('per_weekday_utc') or {}).items()
+                                                      if d in names for k in ('min', 'max')])
+            out['groups_per_%s' % kind] = {
+                g: fmt_range([v[k] for p in default for d, v in ((p.get('groups_per_weekday') or {}).get(g) or {}).items()
+                              if d in names for k in ('min', 'max')])
+                for g in (default[0].get('groups_per_weekday') or {})}
         out['groups_default'] = {}
         for g in default[0].get('groups', {}):
             shares = [v for p in default for v in (p['groups'].get(g, {}).get('share_pct_per_capture') or [])]
@@ -1102,7 +1117,8 @@ def readme_numbers(reports):
         out['session_gap_min_s'] = {n: fmt_range([p['session_gaps_s'][n]['min'] for p in background
                                                   if (p.get('session_gaps_s') or {}).get(n)])
                                     for n in (background[0].get('session_gaps_s') or {})}
-    eps = [c for r in reports if r.get('15_18_episodes_default') for c in r['15_18_episodes_default']['captures']]
+    eps = [c for r in reports for k in ('15_18_episodes_default', '18_episodes_long') if r.get(k)
+           for c in r[k]['captures']]
     if eps:
         out['episode_gaps_h'] = fmt_range([g for c in eps for g in c['gaps_hours']])
         out['episode_spans_s'] = fmt_range([x for c in eps for x in c['spans_seconds']])
