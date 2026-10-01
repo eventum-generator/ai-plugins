@@ -716,7 +716,9 @@ def cmd_live(args):
                              live=True, params=args.param, plan=False)
         res0 = execute(eventum, cfg0, 'live-shipped', out, args.mem, None, live=True, seconds=20)
         shipped = {'seconds': 20, 'log_lines': res0['log_lines'], 'stopped_by': res0['reason'],
-                   'exit': res0['exit'], 'log': res0['log']}
+                   'exit': res0['exit'], 'log': res0['log'],
+                   'records': count_lines(out / 'work' / 'live-shipped' / 'output' / 'events.out'),
+                   'note': 'records depend on the hour: a quiet hour may write none'}
     finally:
         if not args.keep:
             shutil.rmtree(out / 'work' / 'live-shipped', ignore_errors=True)

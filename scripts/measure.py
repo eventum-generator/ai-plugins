@@ -713,12 +713,18 @@ def presence(off, on):
             for v, hits in r['presence'][name].items():
                 if any(k in spans and any(a <= t <= b for a, b in spans[k]) for t, k in hits):
                     used.add(v)
+        where = {}
+        for r in on:
+            for v, hits in r['presence'][name].items():
+                if v in used and v not in where:
+                    where[v] = '%s %s' % (r['path'], iso(hits[0][0]))
         counts = {v: [len(r['presence'][name].get(v, ())) for r in off] for v in used}
         lows = sorted((min(c), v) for v, c in counts.items())[:10]
         out[name] = {'episode_values': len(used),
                      'absent_in_some_background': sorted(v for v, c in counts.items() if min(c or [0]) == 0),
                      'lowest': [{'value': v, 'min_records_per_capture': n,
-                                 'mean_records_per_capture': round(statistics.mean(counts[v]), 1)}
+                                 'mean_records_per_capture': round(statistics.mean(counts[v]), 1),
+                                 'first_seen_in_anomaly_run': where.get(v)}
                                 for n, v in lows]}
     return out
 
