@@ -22,7 +22,7 @@ A generator is accepted when no finding is MEDIUM or HIGH. Each criterion names 
 | 8 | Every template branch emits a record; every sample column read exists; every parameter and sample is validated with one readable error. | MEDIUM |
 | 9 | Samples are realistic but fake (documentation or private addresses, example domains, synthetic names). | HIGH if real data, else LOW |
 | 10 | The README follows the section order of `../../create-generator/references/generator-rules.md`, describes the generated data only, its sample is a generated record (the field set, formats and value domains of a fresh record of that class; captures are random, so bytes cannot be compared), its commands run as written. | LOW; MEDIUM if a claim about behaviour is false |
-| 11 | Every number in the README matches measured output: ranges carry the margin `generator-rules.md` prescribes, so a fresh capture falls inside them; a bare min-max range, a figure outside its range, or a false shape (a peak hour, an absent class) is a finding. | LOW |
+| 11 | Every measured README figure comes from `measure.py readme`, and `measure.py check-readme` against the review report finds no mismatch; a false shape (a peak hour, an absent class) is a finding too. | LOW |
 
 With a chain:
 
@@ -45,17 +45,18 @@ With a chain:
 | Background (`anomaly_mode: false`, or the generator without a chain), 4 days | 2 | 3 | 1, 4, 5, 13 |
 | With a chain, default interval, 4 days | 2 | 3 | 12-18 |
 | With a chain, the shortest admitted interval and any interval the README quotes, 4 days each | 1 each | 1 each | 18 |
-| Default configuration, 14 days: memory series, speed, volume | 1 | 1 | 4, 6, 11 |
-| The same 14 days with a trivial template: Eventum's own memory curve | 1 | 1 | 6 |
+| Default configuration, 7 days: memory series, speed, volume, drift | 1 | 1 | 4, 5, 6, 11 |
+| The same 7 days with a trivial template: Eventum's own memory curve | 1 | 1 | 6 |
 | Timestamps only, then the same moments replayed through the templates, 2 days | 1 | 1 | 3 |
 | Live: the shipped configuration for 20 s, then 90 s with the busiest hour shifted to now, rates scaled to at least about 80 records and schedules moved into the window | 1 | 1 | 2, 7 |
 
-Four days hold four default-interval episodes; fourteen days make memory growth visible against Eventum's own; eighty live records show lag, order and catch-up. Timestamps of carrier inputs are left out of the replay; whether a carrier emits exactly the due records is judged from the template.
+Four days hold four default-interval episodes; seven days make memory growth and rate drift (a pool that fills, a counter that saturates) visible; eighty live records show lag, order and catch-up. Timestamps of carrier inputs are left out of the replay; whether a carrier emits exactly the due records is judged from the template.
 
 ## Measurements
 
 `measure.py report <measure.json> <manifest.json>` gives every number, keyed by criterion (`2_runs`, `3_one_record_per_timestamp`, `4_5_profile` of background and `11_profile_default` of the default configuration, each with per-day, per-weekday, class, group, hourly and sequence figures, `6_state`, `7_live`, `12_chains`, `13_presence`, `13_step_pairs_in_background`, `15_18_episodes_default`, `18_episodes_short` per interval, `speed` per CPU second for every run and its lowest), and `flags`: measured facts that fail a criterion outright; it exits 1 while flags remain. Days and hours are UTC; records outside a run's window are counted, not measured. Each flag becomes a finding; the numbers without a flag are judged against the criteria:
 
+- 5: `class_drift` flags a class whose daily rate changes more than 2.5x between the halves of the long run.
 - 4, 5: class shares, group shares, hourly curves and sequence delays of background (`4_5_profile`, from the background runs) against the brief and the design; the README's figures come from the default configuration (`11_profile_default`).
 - 6: memory growth over the long run beyond the trivial-template baseline, flagged above 10% and 50 MB between its second and last quarter when the peak also exceeds the baseline's by more than 100 MB.
 - 15: the actor's records in the 30 minutes before each episode against the same actor before ordinary background records of the chain's first step and at the same clock time on background days, and after each episode against the actor after ordinary records of the last step; with fewer than about five records per window the ratios carry no signal, and the criterion is judged from the templates.
@@ -63,7 +64,7 @@ Four days hold four default-interval episodes; fourteen days make memory growth 
 - 14: spacing the actor keeps in background (sessions apart, cooldowns): a `sessions` spec of the actor's repeated action, its minimum gap in `4_5_profile` (background) against `14_profile_anomaly`; a gap anomaly runs go clearly below (more than 5% under the background minimum) is flagged.
 - 8: each invalid parameter value or sample in its own run (`capture.py one --param KEY=VALUE` or `--replace samples/x.csv=<broken copy>`, with `--days 0.1 --name bad-<what> --expect-error`): exactly one readable ERROR line and no records.
 - 17: `17_prefixes_in_background`, completions of the chain's first k steps; counts that stay high up to n-1 steps are a pile-up below the threshold. A rare prefix linked only through the key is not a finding: criterion 13 requires parts linked by a value beyond the key.
-- 18: gaps, first start, start hours (weekends from the 14-day run, `18_episodes_long`), `starts_in_quiet_hours` (hours below a quarter of the busiest; flagged above a quarter of the starts or two in a row), distinct actors and keys per capture; `episodes_at_most` bounds the count a window can hold.
+- 18: gaps, first start, start hours (weekends from the long run, `18_episodes_long`), `starts_in_quiet_hours` (hours below a quarter of the busiest; flagged above a quarter of the starts or two in a row), distinct actors and keys per capture; `episodes_at_most` bounds the count a window can hold.
 
 Criteria 1, 8, 9, 10, 14, 16 and 17 need reading: the sample record against the reference records, the templates, the samples, the README.
 
