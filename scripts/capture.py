@@ -446,7 +446,9 @@ ANSI = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
 def execute(eventum, cfg_path, run_id, out_dir, mem, timeout, live=False, seconds=None):
     log = out_dir / (run_id + '.log')
     cmd = [eventum, 'generate', '--path', str(cfg_path), '--id', run_id,
-           '--live-mode', 'true' if live else 'false', '--keep-order', 'true', '-vvv']
+           '--live-mode', 'true' if live else 'false', '-vvv']
+    if not live:  # live runs as users run it; batch captures are kept in time order
+        cmd[-1:-1] = ['--keep-order', 'true']
     with open(log, 'w', encoding='utf-8') as fh:
         res = slot.run(cmd, mem_mb=mem, timeout=seconds if live else timeout,
                        stdout=fh, stderr=subprocess.STDOUT, env=CHILD_ENV,
@@ -723,16 +725,28 @@ def cmd_live(args):
         if not args.keep:
             shutil.rmtree(work, ignore_errors=True)
             cleanup_work(out)
+    if args.spec:  # read records the way measure.py does: native lines, any time format
+        import measure
+        with open(args.spec, encoding='utf-8') as fh:
+            spec = measure.Spec(json.load(fh))
+
+        def record_time(line):
+            row = spec.row(line.decode('utf-8', 'replace'))
+            return None if row is None else spec.time(row)
+    else:
+        def record_time(line):
+            try:
+                ts = parse_iso(resolve(json.loads(line), args.ts_path))
+            except ValueError:
+                return None
+            return None if ts is None else ts.timestamp()
     lags, order_breaks, prev = [], 0, None
     for wall, ln in samples:
-        try:
-            v = resolve(json.loads(ln), args.ts_path)
-        except ValueError:
+        t = record_time(ln)
+        if t is None:
             continue
-        ts = parse_iso(v)
-        if ts is None:
-            continue
-        lags.append(wall - ts.timestamp())
+        ts = t
+        lags.append(wall - t)
         if prev is not None and ts < prev:
             order_breaks += 1
         prev = ts
@@ -764,8 +778,8 @@ def cmd_live(args):
     if late:
         report['problems'].append('%d records more than 5 s behind the wall clock (catch-up)' % late)
     if len(lags) < 30:
-        report['problems'].append('%d records with a readable %s: too few to judge (raise --scale or '
-                                  '--seconds; native output: pass --ts-path)' % (len(lags), args.ts_path))
+        report['problems'].append('%d records with a readable time: too few to judge (raise --scale or '
+                                  '--seconds; native output: pass --spec measure.json)' % len(lags))
     report['ok'] = not report['problems']
     dump(out / 'live.json', report)
     print(json.dumps(report, indent=1))
@@ -804,7 +818,8 @@ def main():
     lv.add_argument('--seconds', type=float, default=90)
     lv.add_argument('--scale', type=float, help='rate multiplier (default: aims at about 80 records)')
     lv.add_argument('--carrier', action='append', default=[], help='tag of a carrier input')
-    lv.add_argument('--ts-path', default='@timestamp')
+    lv.add_argument('--ts-path', default='@timestamp', help='time field of JSON records')
+    lv.add_argument('--spec', help='measure.json: read records with its parse and timestamp')
     args = ap.parse_args()
     try:
         if args.cmd == 'doctor':

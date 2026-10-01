@@ -4,7 +4,7 @@ The plugin `content-design` in the marketplace `eventum-ai-plugins` holds skills
 
 ## Layout
 
-A skill lives in `skills/<name>/SKILL.md`; next to it `references/` (facts), `scripts/` (Python) and `assets/` (skeletons). The adapters `.claude-plugin/`, `.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json`, `.agents/plugins/marketplace.json` and `.opencode/plugins/content-design.js` load `skills/` as a whole; a new skill needs no registration.
+A skill lives in `skills/<name>/SKILL.md`, with `references/` (facts) next to it; tools shared by the skills live in `scripts/` at the repository root. The adapters `.claude-plugin/`, `.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json`, `.agents/plugins/marketplace.json` and `.opencode/plugins/content-design.js` load `skills/` as a whole; a new skill needs no registration.
 
 - `skills/using-content-design/references/orientation.md` is injected at session start (`hooks/` for Claude Code and Cursor, the OpenCode adapter; Codex loads the `using-content-design` skill). It maps stages to skills; a new stage skill is added there.
 - Skills of one pipeline: `research-source` → `create-generator` → `review-generator` → `publish-generator`. They exchange files in `.content-design/<name>/` and reference each other's `references/` by relative path instead of duplicating them. `using-content-design/references/feedback.md` is the shared last step of every stage.

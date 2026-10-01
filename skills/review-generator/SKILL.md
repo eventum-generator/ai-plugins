@@ -10,9 +10,9 @@ An independent acceptance review: fresh captures measured against the acceptance
 ## Before starting
 
 - Run in a context that did not build the generator (a subagent or a new session); the author's notes and reports are claims to verify, not evidence.
-- `python <skill dir>/../../scripts/capture.py doctor` reports `ok`.
-- Inputs: the generator directory; `.content-design/<name>/brief.md` and `reference/` for the native format when they exist (otherwise the README's references); `measure.json` when it exists (otherwise write it from the README per `../create-generator/references/measure-spec.md`).
-- The review writes only `.content-design/<name>/review.md`, `review-digest.json`, `captures/review/` and its feedback.
+- `python3 <skill dir>/../../scripts/capture.py doctor` reports `ok`.
+- Inputs: the generator directory (for a content-pack PR: `gh pr checkout <number>` in a worktree of a content-packs clone); `.content-design/<name>/brief.md` and `reference/` for the native format when they exist (otherwise the README's references); `measure.json` when it exists (otherwise write it from the README per `../create-generator/references/measure-spec.md`).
+- The review writes only `.content-design/<name>/review.md`, `review-digest.json`, `review-report.json`, `captures/review/`, `measure.json` when it was missing, and its feedback.
 
 ## References
 
@@ -21,14 +21,14 @@ An independent acceptance review: fresh captures measured against the acceptance
 - `../create-generator/references/eventum-api.md` - the Eventum API, to judge templates and inputs.
 - `../create-generator/references/generator-rules.md` - the conventions criteria 8-11 refer to.
 
-Scripts are at `<skill dir>/../../scripts/`.
+`<scripts>` is `<skill dir>/../../scripts`; scripts run with `python3` (`py -3` on Windows).
 
 ## Process
 
-1. **Record the files** - `python <scripts>/measure.py digest <generator> --save .content-design/<name>/review-digest.json`, adding `--previous <old review-digest.json>` on a re-review: only the changed and added files need reading again; every measurement is rerun.
-2. **Read** `generator.yml`, templates, samples and inputs against the criteria: format against the reference records, rate and rhythm, template branches, parameter validation, state bounds, and with a chain the guard and episode logic. Note what the measurements must confirm.
-3. **Capture** - `python <scripts>/capture.py run <generator> --out .content-design/<name>/captures/review --set review` and `capture.py live` into the same directory, with the carrier tags (`--carrier`) and the shortest admitted interval (`--short-interval`) that the generator's inputs and parameter checks show.
-4. **Measure** - `python <scripts>/measure.py report <measure.json> <captures/review/manifest.json> --save .content-design/<name>/review-report.json`; extra runs for parameter variants use `capture.py one --param KEY=VALUE`; every flag is a finding; judge the other numbers by `references/acceptance.md`; check every README number and command.
+1. **Record the files** - `python3 <scripts>/measure.py digest <generator> --save .content-design/<name>/review-digest.json`, adding `--previous <old review-digest.json>` on a re-review: only the changed and added files need reading again; every measurement is rerun.
+2. **Read** `generator.yml`, templates, samples and inputs against the criteria: format against the reference records, rate and rhythm, template branches, parameter validation, state bounds, and with a chain the guard and episode logic. Check that `measure.json` encodes every class, group, linking field and actor pair the README names, and complete it where it does not. Note what the measurements must confirm.
+3. **Capture** - `python3 <scripts>/capture.py run <generator> --out .content-design/<name>/captures/review --set review` and `capture.py live` into the same directory, with every carrier tag (`--carrier`), the shortest admitted interval and every interval the README quotes (`--short-interval`), and `live --spec <measure.json>` for native output.
+4. **Measure** - `python3 <scripts>/measure.py report <measure.json> <captures/review/manifest.json> --save .content-design/<name>/review-report.json`; a parameter variant is a full set of its own (`capture.py run --param KEY=VALUE --out <another dir>`); every flag is a finding; judge the other numbers by `references/acceptance.md`; check every README number and command.
 5. **Classify** each failure by `references/acceptance.md`.
 6. **Write** `.content-design/<name>/review.md`: digest, date, Eventum version, verdict (CLEAR when no MEDIUM or HIGH, otherwise NOT CLEAR), findings as a table (criterion, severity, evidence with numbers or file and line, what a consumer of the data would see), and the numbers behind the passed criteria. Delete the captures; keep `review-report.json`.
 7. **Feedback** - `../using-content-design/references/feedback.md`.

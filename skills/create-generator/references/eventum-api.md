@@ -194,7 +194,7 @@ samples:
 
 | Call | Effect |
 |---|---|
-| `dispatch.drop()` | No event for this timestamp; in `mode: all` the output of every other template of that timestamp is discarded too. A drop costs about four times a render of a small event (3 million: 102 s against 26 s). |
+| `dispatch.drop()` | No event for this timestamp; in `mode: all` the output of every other template of that timestamp is discarded too. A drop costs about four times a render of a small event. |
 | `dispatch.next(max_repicks=64)` | Discard output, pick templates again for the same timestamp; more than `max_repicks` is an error. |
 | `dispatch.exhaust()` | End the event stage; the current batch is still written. |
 

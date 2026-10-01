@@ -38,13 +38,13 @@
 | `day_start_hour` | UTC hour at which a counted day starts (default 0); 12 keeps a night of scheduled jobs in one day. |
 | `chain` | The anomaly chain, when there is one (below). |
 
-A value spec is `{"path": p}` or `{"paths": [p, ...]}` (joined with `|`), with an optional `regex` whose group 1 (or whole match) is taken. Paths are dotted; a literal key containing dots (`@timestamp`) is tried first; `field.0` indexes a list.
+A value spec is `{"path": p}` or `{"paths": [p, ...]}` (joined with `|`), with an optional `regex` whose group 1 (or whole match) is taken. Paths are dotted; a literal key containing dots (`@timestamp`) is tried first; `field.0` indexes a list, and a value spec on a list field takes its first element.
 
 A condition is a clause `{"path": p, ...}` with `values` (string match), `regex`, numeric `gt` / `ge` / `lt` / `le`, or `"missing": true`, combined with `{"any": [...]}`, `{"all": [...]}` and `{"not": cond}`. A list field matches when any element does.
 
 ## Chain
 
-The chain encodes every linking field the README names (an address, a token id inside a message), because the measurements of background pairs and presence see only what the spec links. A value that links every step (an address) is bound at the first step and checked with `eq` at every later one; pairs of later steps inherit it.
+The chain encodes every linking field the README names (an address, a token id inside a message), because the measurements of background pairs and presence see only what the spec links. A value beyond the key that links several steps (a role name, a token id) is bound at the first of them and checked with `eq` at the later ones; pairs of later steps inherit it.
 
 | Field | Meaning |
 |---|---|

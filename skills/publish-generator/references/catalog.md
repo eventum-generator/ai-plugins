@@ -6,7 +6,7 @@
 
 - A generator lives in `generators/<slug>/`: `generator.yml`, `README.md`, `templates/`, and as needed `samples/`, `patterns/`, `scripts/`; nothing else (no `output/`, no working files, no stray samples at the root). Nothing is registered elsewhere; `config/startup.yml` stays as it is.
 - Eventum Studio installs catalog entries: any `generators/<dir>/` with a `generator.yml`, named after the directory; title and summary from the README's first heading and the paragraph under it; regular files only (symlinks and submodules dropped); at most 10,000 files and 512 MiB unpacked.
-- The catalog accepts JSON output only (`json` formatter; ECS JSON, or native JSON records).
+- The catalog accepts one JSON object per line: ECS JSON (`json` formatter) or a native JSON record (`plain` formatter when its compact form must be kept).
 - One generator per pull request from branch `feat/<slug>`; commit and PR title `feat: add <Display Name> generator`.
 - PR body: a lead paragraph (source and version, output shape, estate, records per day, curve); `## Modes` (with a chain: `anomaly_mode: true` with the chain, actor and recurrence, and `false` with background overlap); `## Validation` (numbers from `review-report.json`, the review verdict with the reviewed digest, and the head digest when the README changed since); `## Limits`.
 

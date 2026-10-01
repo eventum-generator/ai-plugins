@@ -13,5 +13,5 @@ Stages run in this order, starting where the user's material allows. The review 
 
 - **Working directory**: `.content-design/<name>/` in the project root holds everything not shipped with the generator; keep it out of commits (`.git/info/exclude`).
 - **Parallel work**: one subagent per generator runs its stages, the review in a subagent of its own. The plugin's scripts run every Eventum process, docs build and git operation on a shared clone under host-wide slots, so parallel agents stay within the host's memory; no process is ever killed by name.
-- **Tools**: `scripts/` at the plugin root (Python 3.9+): `capture.py` (environment check, test captures), `measure.py` (every number), `slot.py` (host slots). Eventum 2.8+ (`uv tool install eventum-generator`).
-- **Feedback**: every stage ends with `references/feedback.md`.
+- **Tools**: `<skill dir>/../../scripts/` (Python 3.9+, run with `python3`): `capture.py` (environment check, test captures), `measure.py` (every number), `slot.py` (host slots). Eventum 2.8+ (`uv tool install eventum-generator`).
+- **Feedback**: every stage ends with `using-content-design/references/feedback.md`.

@@ -10,7 +10,7 @@ Establishes, from primary sources, everything a generator needs to imitate one l
 ## Before starting
 
 - Settle with the user: product and stream, version (default: the current supported one), transport and encoding, and what the data is for (detections, dashboards, load). Ask only what cannot be decided from the request.
-- `<name>` is `<category>-<product>[-<stream>]` (`../create-generator/references/generator-rules.md`). Claim the work by creating `.content-design/<name>/` in the project root; if it already exists and is not this session's, another agent owns it: stop and tell the user.
+- `<name>` is `<category>-<product>[-<stream>]` (`../create-generator/references/generator-rules.md`). Claim the work by creating `.content-design/<name>/` in the project root; if it already exists and the user did not hand this task to it, another agent owns it: stop and tell the user.
 - The skill reads the web and writes only into `.content-design/<name>/`.
 
 ## References

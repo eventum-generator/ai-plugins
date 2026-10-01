@@ -9,7 +9,7 @@ Builds a generator whose output passes for the source: its native format, its or
 
 ## Before starting
 
-- `python <skill dir>/../../scripts/capture.py doctor` reports `ok` (Eventum 2.8+); fix what it names first.
+- `python3 <skill dir>/../../scripts/capture.py doctor` reports `ok` (Eventum 2.8+); fix what it names first.
 - Input is one of: `.content-design/<name>/brief.md` from `research-source`; or the user's own material (format description, sample records, a log file). From user material, claim `.content-design/<name>/`, write the brief yourself (`../research-source/references/brief.md`, sections Source, Event classes, Fields, Time, Limits, Anomaly chain candidates), save the given records under `reference/`, and ask the user only for what the material does not answer (volume, populations, whether a chain is wanted). With neither, run `research-source` first.
 - The generator goes where the user says, default `./generators/<name>/`; everything else goes to `.content-design/<name>/`. The skill writes only there.
 - Catalog generators are not a standard: many predate these rules (flat 1-second `cron`, rates shaped by drops, guards that drop records). Facts come from the brief, rules from this skill.
@@ -22,7 +22,7 @@ Builds a generator whose output passes for the source: its native format, its or
 - `references/measure-spec.md` - the measurement spec read by `measure.py`.
 - `../review-generator/references/acceptance.md` - the acceptance criteria, the capture set and what each measurement proves.
 
-Scripts are at `<skill dir>/../../scripts/`.
+`<scripts>` is `<skill dir>/../../scripts`; scripts run with `python3` (`py -3` on Windows).
 
 ## Process
 
@@ -32,7 +32,7 @@ Validation and self-check send work back to the build, or to the design when the
 
 Write each decision down with the brief fact behind it.
 
-- **Output shape** - as the brief sets it: what one record is (a line, a host snapshot, one metric sample); ECS JSON with the native record in `event.original`, or native records only.
+- **Output shape** - as the brief sets it: what one record is (a line, a host snapshot, one metric sample); ECS JSON with the native record in `event.original`, or native records only (then `measure.json` gets a `parse` regex).
 - **Rate and rhythm** - inputs set volume and rhythm; each population gets its own tagged input, chosen by how it produces records:
 
   | Population | Input |
@@ -44,7 +44,7 @@ Write each decision down with the brief fact behind it.
 
   An input's rate counts records, not actions: an action that writes k records takes k timestamps of its population. Every timestamp yields one record; a scheduled tick emits the first record of the action it starts (a job's start line).
 
-  A carrier is the one exception: when records fall at moments no input schedules (the steps of a job after its start), or when a population's own timestamps are sparser than the delays between an action's records (follow-ups of rare night sessions), an input with its own tag supplies timestamps, and the template emits the earliest due record or drops the timestamp. The record's event time is its due time, which lies inside the carrier's tick interval, never the whole-second tick itself. A carrier tick carries as many timestamps (`count`) as records can fall due within one tick; a carrier covers only the hours its records can fall in, at the coarsest resolution they need: a drop costs about four renders. No population's volume is ever shaped by drops.
+  A carrier is the one exception: when records fall at moments no input schedules (the steps of a job after its start), or when a population's own timestamps are sparser than the delays between an action's records (follow-ups of rare night sessions), an input with its own tag supplies timestamps, and the template emits the earliest due record or drops the timestamp. The record's event time is its due time, which lies inside the carrier's tick interval, never the whole-second tick itself. A carrier tick carries as many timestamps (`count`) as records can fall due within one tick; a carrier covers only the hours its records can fall in, at the coarsest resolution they need, since drops are costly. No population's volume is ever shaped by drops.
 - **Event mix** - every class with its share from the brief. A class that stands alone (an access line, a flow record, a metric snapshot) is picked per timestamp by weight. When one action writes several related records (a logon and its logoff; a job start, its per-item results and its finish), each population keeps its pending records in a queue in `shared`: a timestamp emits the earliest due record of its population, otherwise starts the population's next action. Records of one moment (a request and its log lines) take consecutive timestamps and stay adjacent. The timestamp is the event time, except for records emitted on a carrier.
 - **Population** - actors (users, hosts, clients, services). Actors that act on demand have skewed activity weights bounded from below and above, so every actor appears regularly and none dominates, and are numerous enough that each one's own rate is realistic. Members that act on a schedule or an interval (hosts reporting metrics, machines in a backup job) all act every cycle; they vary in outcome and load.
 - **Background** - a normal period of the source, not an incident or an outage: failures a few percent of attempts with a monotone law (one failure more common than two), retries and give-ups; occasional bursts carried by a few actors; measurements within their usual range, counters monotone; every limit in the brief holds.
@@ -60,15 +60,14 @@ Write each decision down with the brief fact behind it.
 ### 3. Validate
 
 ```bash
-python <scripts>/capture.py run <generator> --out .content-design/<name>/captures --set author [--carrier <tag>] [--short-interval <hours>]
-python <scripts>/capture.py live <generator> --out .content-design/<name>/captures [--carrier <tag>]
-python <scripts>/measure.py report .content-design/<name>/measure.json .content-design/<name>/captures/manifest.json --save .content-design/<name>/report.json
+python3 <scripts>/capture.py run <generator> --out .content-design/<name>/captures --set author [--carrier <tag>] [--short-interval <hours>]
+python3 <scripts>/capture.py live <generator> --out .content-design/<name>/captures [--carrier <tag>]
+python3 <scripts>/measure.py report .content-design/<name>/measure.json .content-design/<name>/captures/manifest.json --save .content-design/<name>/report.json
 ```
 
-- `--carrier` names every carrier tag; `--short-interval` takes the shortest interval the parameter range admits and every interval the README quotes (default 6; `0` for none).
-- The live check runs the shipped configuration for 20 s, then shifts the day curve so that its busiest hour runs now and scales rates to about 80 records; a schedule is moved into the window.
-- `--param KEY=VALUE` runs a parameter variant (`capture.py one`).
-- `report` exits 1 while flags remain. Every flag is a defect to fix; the other numbers are judged in phase 4. After a fix, rerun the set: runs execute in parallel and are cheap next to a missed defect. Keep `report.json` and the captures until the README is written.
+- `--carrier <tag>` once per carrier tag; `--short-interval` takes the shortest interval the parameter range admits and every interval the README quotes (default 6; `0` for none); `live --spec <measure.json>` for native output.
+- A parameter variant is a full set of its own: `run --param KEY=VALUE --out <another dir>`.
+- What each run and number proves is in the acceptance criteria (Captures, Measurements). Every flag is a defect to fix; the other numbers are judged in phase 4. After a fix, rerun the set: runs execute in parallel and are cheap next to a missed defect. Keep `report.json` and the captures until the README is written.
 
 ### 4. Self-check
 
