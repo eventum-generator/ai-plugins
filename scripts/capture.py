@@ -580,7 +580,11 @@ def check_pair(args, rec, cfg_path, cfg, work, eventum, py, window, days, mode, 
 
 
 def plan(args, has_chain):
-    counts = SETS[args.set]
+    counts = dict(SETS[args.set])
+    if args.off_runs:
+        counts['off'] = args.off_runs
+    if args.on_runs:
+        counts['on'] = args.on_runs
     runs = []
     for i in range(counts['off']):
         runs.append(('off-%d' % (i + 1), 'off', 'off' if has_chain else 'as-is', None, args.days))
@@ -682,9 +686,9 @@ def cmd_one(args):
         if rec.get('log'):
             first = log_lines(rec['log'])
             rec['error_line'] = first[0][:400] if first else None
-        print(json.dumps(rec, indent=1))
+        print(json.dumps({k: v for k, v in rec.items() if k != 'rss_mb'}, indent=1))
         return 0 if rec['expected_error_ok'] else 1
-    print(json.dumps(rec, indent=1))
+    print(json.dumps({k: v for k, v in rec.items() if k != 'rss_mb'}, indent=1))
     return 0 if not run_problems([rec]) else 1
 
 
@@ -829,6 +833,8 @@ def main():
     r.add_argument('--set', choices=sorted(SETS), default='author')
     r.add_argument('--days', type=int, default=4)
     r.add_argument('--long-days', type=int, default=14)
+    r.add_argument('--off-runs', type=int, help='background runs (default: by --set)')
+    r.add_argument('--on-runs', type=int, help='anomaly runs at the default interval (default: by --set)')
     r.add_argument('--long-runs', type=int, default=1,
                    help='default-configuration runs; more give the README per-run ranges')
     r.add_argument('--check-days', type=int, default=2)

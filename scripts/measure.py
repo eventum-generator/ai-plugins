@@ -865,11 +865,11 @@ def report(spec_path, manifest_path):
             rep['7_live'] = json.load(fh)
     else:
         rep['7_live'] = 'not run: capture.py live'
-    if 'long' in runs and long_:
-        cpu = runs['long'].get('cpu_s')
-        rep['speed'] = {'records_per_cpu_s': round(long_[0]['records'] / cpu) if cpu else None,
-                        'records_per_wall_s': round(long_[0]['records'] / max(runs['long']['wall_s'], 0.001)),
-                        'note': 'CPU seconds do not depend on parallel load; wall seconds do'}
+    per_run = {r['name']: round(r['lines'] / r['cpu_s'], 1) for r in caps
+               if r.get('cpu_s') and r.get('lines') and r['kind'] in ('off', 'on', 'short', 'long')}
+    if per_run:
+        rep['speed'] = {'records_per_cpu_s_lowest': min(per_run.values()), 'records_per_cpu_s_per_run': per_run,
+                        'note': 'CPU seconds vary with host load less than wall seconds; the README takes the lowest'}
     if man.get('has_chain') and spec_raw.get('chain'):
         rep['12_chains'] = chains_report(off, on + short)
         rep['13_presence'] = presence(off, on + short)
