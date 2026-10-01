@@ -387,12 +387,19 @@ def file_output(cfg, path):
 
 
 def prepare(src, dst, py, window, days, mode='as-is', interval=None, scale=1, live=False,
-            seconds=90, carrier=(), params=(), plan=True):
+            seconds=90, carrier=(), params=(), plan=True, replace=()):
     """Copy the generator to dst and bound it; (generator.yml path, config, notes)."""
     src = Path(src).resolve()
     if dst.exists():
         shutil.rmtree(dst)
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns('output', '.*'))
+    for pair in replace or ():  # REL=PATH: a file of the copy replaced (a broken sample)
+        rel, _, path = pair.partition('=')
+        target = (dst / rel).resolve()
+        if not _ or dst.resolve() not in target.parents:
+            raise CaptureError('--replace needs REL=PATH inside the generator: %s' % pair)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, target)
     cfg_path = dst / 'generator.yml'
     cfg = load_yaml(py, [cfg_path])[cfg_path]
     pat_paths = []
@@ -501,7 +508,7 @@ def one(args, name, kind, mode, interval, days, eventum, py, window, carrier=())
            'window_start': iso(window), 'window_end': iso(window + timedelta(days=days))}
     try:
         cfg_path, cfg, notes = prepare(args.generator, work, py, window, days, mode, interval,
-                                       params=args.param)
+                                       params=args.param, replace=getattr(args, 'replace', ()))
         rec['notes'] = notes
         if kind == 'check':
             return check_pair(args, rec, cfg_path, cfg, work, eventum, py, window, days, mode, interval, carrier)
@@ -661,6 +668,11 @@ def cmd_one(args):
               window_start(args.start))
     if not args.keep:
         cleanup_work(args.out)
+    if args.expect_error:  # an invalid parameter or sample: one readable error, nothing written
+        rec['expected_error_ok'] = (rec.get('exit') == 0 and rec.get('log_lines') == 1
+                                    and not rec.get('lines'))
+        print(json.dumps(rec, indent=1))
+        return 0 if rec['expected_error_ok'] else 1
     print(json.dumps(rec, indent=1))
     return 0 if not run_problems([rec]) else 1
 
@@ -816,6 +828,10 @@ def main():
     o.add_argument('--days', type=float, default=4)
     o.add_argument('--mode', choices=['on', 'off', 'as-is'], default='as-is')
     o.add_argument('--interval', type=float)
+    o.add_argument('--replace', action='append', default=[],
+                   help='REL=PATH: replace a file of the copy (a broken sample for a validation check)')
+    o.add_argument('--expect-error', action='store_true',
+                   help='succeed only on exactly one log line and no records (invalid input checks)')
     lv = sub.add_parser('live', parents=[common], help='live-mode check')
     lv.add_argument('--seconds', type=float, default=90)
     lv.add_argument('--scale', type=float, help='rate multiplier (default: aims at about 80 records)')
