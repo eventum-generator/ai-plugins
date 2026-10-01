@@ -206,6 +206,17 @@ class ParseProfileTest(unittest.TestCase):
         self.assertEqual(prof['session_gaps_s']['bursts']['min'], 1980)
         self.assertEqual(prof['groups_per_day']['fails'], {'min': 1, 'median': 2.0, 'max': 3})
 
+    def test_per_group_and_ratios(self):
+        spec = {'groups': {'jobs': {'path': 'event.action', 'values': ['start']},
+                           'failed': {'path': 'event.action', 'values': ['fail']}},
+                'per_group': {'records_per_job': {'group': {'path': 'job'}}},
+                'ratios': {'failure_pct': {'num': 'failed', 'den': 'jobs'}}}
+        rows = [dict(ev(T0 + i, a), job=j) for i, (a, j) in enumerate(
+            [('start', 1), ('x', 1), ('start', 2), ('fail', 2), ('x', 2), ('start', 3), ('start', 4)])]
+        prof = measure.profile([measure.scan(spec, write(self.dir / 'pg.jsonl', rows))])
+        self.assertEqual(prof['records_per_group']['records_per_job']['max'], 3)
+        self.assertEqual(prof['ratios_pct']['failure_pct'], {'min_pct': 25.0, 'max_pct': 25.0})
+
     def test_groups_and_order(self):
         spec = {'class': {'path': 'event.action'},
                 'groups': {'failures': {'path': 'event.action', 'values': ['fail']}}}

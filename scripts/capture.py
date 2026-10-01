@@ -269,7 +269,7 @@ def live_plan(gen_dir, cfg, patterns, window, seconds, carrier=(), target=80):
     return peak, scale, notes
 
 
-def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False, shift=None, move=True):
+def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False, shift=None, move=True, carrier=()):
     """Bound every input of a loaded config in place; notes of what changed.
 
     `patterns` maps pattern paths (resolved) to their loaded content and is
@@ -279,10 +279,12 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False, shift=None,
     """
     end = window + timedelta(days=days)
     notes = []
+    base_scale = scale
     for item in cfg.get('input') or []:
         (plugin, conf), = item.items()
         conf = conf or {}
         item[plugin] = conf
+        scale = 1 if set(conf.get('tags') or ()) & set(carrier) else base_scale  # carriers keep their rate
         if plugin == 'time_patterns':
             for rel in conf.get('patterns') or []:
                 path = (gen_dir / rel).resolve()
@@ -410,7 +412,7 @@ def prepare(src, dst, py, window, days, mode='as-is', interval=None, scale=1, li
         plan_notes.append('rates scaled x%s' % scale)
     elif live:
         scale = 1
-    notes = plan_notes + bound(dst, cfg, patterns, window, days, scale, live, shift, move=plan)
+    notes = plan_notes + bound(dst, cfg, patterns, window, days, scale, live, shift, move=plan, carrier=carrier)
     set_mode(cfg, mode, interval)
     set_params(cfg, params)
     file_output(cfg, dst / 'output' / 'events.out')

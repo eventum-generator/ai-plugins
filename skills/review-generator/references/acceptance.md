@@ -29,7 +29,7 @@ With a chain:
 | # | Criterion | Failure |
 |---|---|---|
 | 12 | `anomaly_mode: false` produces no complete chain; `true` produces exactly one per episode (strict count, every binding kept). | HIGH |
-| 13 | Presence: every step, and every actor and actor pair an episode can use, occurs in ordinary background of every background capture; nothing occurs only in episodes. An element averaging below 5 records per capture is LOW. | MEDIUM |
+| 13 | Presence: every step, every actor and actor pair an episode can use, and every value it writes into a step occurs in ordinary background of every background capture; nothing occurs only in episodes. An element averaging below 5 records per capture is LOW even when a capture lacks it (absence is then the statistical tail); one averaging 5 or more and absent from a capture, or absent from all, is MEDIUM. | MEDIUM |
 | 14 | Episodes respect every cap and limit background respects (lockout thresholds, session caps, counters, uniqueness, live-object counts). | MEDIUM |
 | 15 | Around an episode the actor behaves as at the same hour on ordinary days: activity before and after within the range of ordinary days; the episode does not cancel, delay or take over the actor's own work. | MEDIUM |
 | 16 | An episode leaves no state behind: counters, locks, open objects and names in use return on the schedule background uses; nothing stays armed. | MEDIUM |

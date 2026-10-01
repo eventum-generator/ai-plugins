@@ -203,6 +203,9 @@ class Spec:
                           for n, v in (raw.get('sequences') or {}).items()}
         self.sessions = {n: (compile_value(v['group']), compile_cond(v['match']), float(v['gap']))
                          for n, v in (raw.get('sessions') or {}).items()}
+        self.per_group = {n: (compile_value(v['group']), compile_cond(v.get('when')))
+                          for n, v in (raw.get('per_group') or {}).items()}
+        self.ratios = raw.get('ratios') or {}
         chain = raw.get('chain')
         self.chain = None
         if chain:
@@ -309,10 +312,11 @@ def scan(spec_raw, path, lo=None, hi=None):
         'groups': {g: {'records': 0, 'hours': [0] * 24} for g in spec.groups},
         'actors': {}, 'first_step': {}, 'last_step': {}, 'chains': [], 'step_hits': [], 'keys': [],
         'presence': {n: {} for n in spec.presence},
-        'window': [lo, hi], 'day_shift': spec.day_shift,
+        'window': [lo, hi], 'day_shift': spec.day_shift, '_ratios': spec.ratios,
         'sequences': {n: [] for n in spec.sequences},
         'sessions': {n: [] for n in spec.sessions},
         'group_days': {g: {} for g in spec.groups},
+        'per_group': {n: {} for n in spec.per_group},
     }
     last_seen = {n: {} for n in spec.sessions}
     pending = {n: {} for n in spec.sequences}
@@ -363,6 +367,11 @@ def scan(spec_raw, path, lo=None, hi=None):
                     out['groups'][g]['records'] += 1
                     out['groups'][g]['hours'][hour] += 1
                     out['group_days'][g][day] = out['group_days'][g].get(day, 0) + 1
+            for n, (grp, when) in spec.per_group.items():
+                if when is None or when(row):
+                    g = grp(row)
+                    if g is not None:
+                        out['per_group'][n][g] = out['per_group'][n].get(g, 0) + 1
             for n, (grp, match, gap) in spec.sessions.items():
                 if not match(row):
                     continue
@@ -522,6 +531,12 @@ def profile(results, top=40):
         shares['(other %d classes)' % (len(ranked) - top)] = round(
             100.0 * sum(n for _, n in ranked[top:]) / total, 2)
 
+    ratio_out = {}
+    for name, (num, den) in ((n, (v['num'], v['den'])) for n, v in (results[0].get('_ratios') or {}).items()) if results else ():
+        per = [100.0 * r['groups'][num]['records'] / r['groups'][den]['records']
+               for r in results if r['groups'].get(den, {}).get('records')]
+        ratio_out[name] = {'min_pct': round(min(per), 2), 'max_pct': round(max(per), 2)} if per else None
+
     def curve(h):
         s = sum(h) or 1
         return [round(100.0 * x / s, 2) for x in h]
@@ -536,10 +551,13 @@ def profile(results, top=40):
         'groups': {g: {'share_pct': round(100.0 * v['records'] / total, 2) if total else 0,
                        'hourly_pct_utc': curve(v['hours'])} for g, v in groups.items()},
         'outside_window': sum(r['outside_window'] for r in results),
+        'ratios_pct': ratio_out,
         'sequence_delays_s': {n: quantiles([d for r in results for d in r['sequences'].get(n, [])])
                               for n in (results[0]['sequences'] if results else {})},
         'session_gaps_s': {n: quantiles([d for r in results for d in r['sessions'].get(n, [])])
                            for n in (results[0]['sessions'] if results else {})},
+        'records_per_group': {n: quantiles([c for r in results for c in r['per_group'].get(n, {}).values()])
+                              for n in (results[0]['per_group'] if results else {})},
         'groups_per_day': {g: (lambda v: {'min': min(v), 'median': statistics.median(v), 'max': max(v)}
                                if v else None)([n for r in results for d, n in full_days_of(r, r['group_days'][g])])
                            for g in (results[0]['group_days'] if results else {})},
