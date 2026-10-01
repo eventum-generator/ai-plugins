@@ -527,6 +527,10 @@ def profile(results, top=40):
         per_day += [n for _, n in full_days(r)]
     ranked = sorted(classes.items(), key=lambda kv: -kv[1])
     shares = {c: round(100.0 * n / total, 2) for c, n in ranked[:top]}
+    share_range = {}
+    for c, _ in ranked[:top]:
+        per = [100.0 * r['classes'].get(c, 0) / r['records'] for r in results if r['records']]
+        share_range[c] = [round(min(per), 2), round(max(per), 2)]
     if len(ranked) > top:
         shares['(other %d classes)' % (len(ranked) - top)] = round(
             100.0 * sum(n for _, n in ranked[top:]) / total, 2)
@@ -546,7 +550,7 @@ def profile(results, top=40):
                     'max': max(per_day)} if per_day else None,
         'per_weekday_utc': {d: {'min': min(v), 'mean': round(statistics.mean(v)), 'max': max(v)}
                             for d, v in weekday.items()},
-        'class_count': len(classes), 'class_share_pct': shares,
+        'class_count': len(classes), 'class_share_pct': shares, 'class_share_pct_per_capture': share_range,
         'hourly_pct_utc': curve(hours),
         'groups': {g: {'share_pct': round(100.0 * v['records'] / total, 2) if total else 0,
                        'hourly_pct_utc': curve(v['hours'])} for g, v in groups.items()},
@@ -586,6 +590,14 @@ def chains_report(off, on):
         bad = bad or bool(r['chains'] or miss_steps or missing)
     rep['ok'] = not bad
     return rep
+
+
+def _longest_run(flags):
+    best = cur = 0
+    for f in flags:
+        cur = cur + 1 if f else 0
+        best = max(best, cur)
+    return best
 
 
 def _before(times, t, around):
@@ -662,6 +674,8 @@ def episodes_report(on, off, interval_h, window_start, around=1800, hourly=None)
             'start_hours_utc': [int(t // 3600 % 24) for t in s_times],
             'starts_in_quiet_hours': None if not hourly else sum(
                 1 for t in s_times if hourly[int(t // 3600 % 24)] < 0.25 * max(hourly)),
+            'quiet_run': 0 if not hourly else _longest_run(
+                [hourly[int(t // 3600 % 24)] < 0.25 * max(hourly) for t in s_times]),
             'distinct_actors': len({c[3] for c in starts}), 'distinct_keys': len({c[2] for c in starts}),
             'spans_seconds': sorted(round(c[1] - c[0]) for c in starts),
             'around': neigh,
@@ -927,8 +941,9 @@ def flags(rep):
             continue
         for cap in ep['captures']:
             q = cap.get('starts_in_quiet_hours')
-            if q and q > 0.25 * cap['episodes']:
-                out.append('18: %d of %d episode starts in quiet hours in %s' % (q, cap['episodes'], cap['path']))
+            if q and (q > 0.25 * cap['episodes'] or cap.get('quiet_run', 0) >= 2):
+                out.append('18: %d of %d episode starts in quiet hours (%d in a row) in %s'
+                           % (q, cap['episodes'], cap.get('quiet_run', 0), cap['path']))
             if cap['gaps_outside_tolerance']:
                 out.append('18: gaps %s h outside %s ± %s h in %s' % (
                     cap['gaps_outside_tolerance'], ep['interval_hours'], cap['gap_tolerance_hours'], cap['path']))

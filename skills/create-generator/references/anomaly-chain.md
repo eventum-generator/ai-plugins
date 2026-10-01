@@ -34,7 +34,7 @@ An episode is ordinary activity of its actor with the chain inside:
 
 - within every cap, limit and spacing background respects (sessions of one actor at least as far apart as in background), from addresses and hosts of its population's pool;
 - before and after it, the actor behaves as at the same hour on ordinary days;
-- it leaves every state (counters, locks, open objects, names in use) as an ordinary session would, and never cancels, delays or takes over the actor's own work.
+- it leaves every state (counters, locks, open objects, names in use) as an ordinary session would, and never cancels, delays or takes over the actor's own work in progress; reserving an actor's free time ahead of an episode so that its spacing holds is allowed.
 
 ## Guard
 
