@@ -74,7 +74,7 @@
 Templates render once per timestamp, so per-event work scales with the rate.
 
 - `module.rand` for random values; faker and mimesis only where a fixed pool cannot serve, otherwise pre-generated into `samples/`.
-- A carrier timestamp with nothing due drops before any import or setup: the drop path runs on most ticks.
+- A carrier timestamp with nothing due drops before any import or setup: the drop path runs on most ticks. A large template costs time per render even when it drops on its first line, so the drop sits in a small head template that includes the body (`{% include 'templates/_body.jinja' %}`) only when a record is due.
 - Pick directly (`rand.choice`, `weighted_pick`) instead of iterating; filtered pools computed once and kept in state; queues as heaps (`module.heapq`); actors looked up by index.
 
 ## Distributions

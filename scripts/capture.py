@@ -279,13 +279,11 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False, shift=None,
     """
     end = window + timedelta(days=days)
     notes = []
-    base_scale = scale
     for item in cfg.get('input') or []:
         (plugin, conf), = item.items()
         conf = conf or {}
         item[plugin] = conf
-        is_carrier = bool(set(conf.get('tags') or ()) & set(carrier))
-        scale = 1 if is_carrier else base_scale  # carriers keep their rate
+        is_carrier = bool(set(conf.get('tags') or ()) & set(carrier))  # scaled with the populations it serves
         if plugin == 'time_patterns':
             for rel in conf.get('patterns') or []:
                 path = (gen_dir / rel).resolve()
