@@ -216,6 +216,10 @@ class ParseProfileTest(unittest.TestCase):
         prof = measure.profile([measure.scan(spec, write(self.dir / 'pg.jsonl', rows))])
         self.assertEqual(prof['records_per_group']['records_per_job']['max'], 3)
         self.assertEqual(prof['ratios_pct']['failure_pct'], {'min_pct': 25.0, 'max_pct': 25.0})
+        spec['per_group']['records_per_failed_job'] = {'group': {'path': 'job'},
+                                                       'having': {'path': 'event.action', 'values': ['fail']}}
+        prof = measure.profile([measure.scan(spec, write(self.dir / 'pg2.jsonl', rows))])
+        self.assertEqual(prof['records_per_group']['records_per_failed_job']['n'], 1)
 
     def test_groups_and_order(self):
         spec = {'class': {'path': 'event.action'},

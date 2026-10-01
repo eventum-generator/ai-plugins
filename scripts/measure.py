@@ -203,7 +203,7 @@ class Spec:
                           for n, v in (raw.get('sequences') or {}).items()}
         self.sessions = {n: (compile_value(v['group']), compile_cond(v['match']), float(v['gap']))
                          for n, v in (raw.get('sessions') or {}).items()}
-        self.per_group = {n: (compile_value(v['group']), compile_cond(v.get('when')))
+        self.per_group = {n: (compile_value(v['group']), compile_cond(v.get('when')), compile_cond(v.get('having')))
                           for n, v in (raw.get('per_group') or {}).items()}
         self.ratios = raw.get('ratios') or {}
         chain = raw.get('chain')
@@ -313,11 +313,15 @@ def scan(spec_raw, path, lo=None, hi=None):
         'actors': {}, 'first_step': {}, 'last_step': {}, 'chains': [], 'step_hits': [], 'keys': [],
         'presence': {n: {} for n in spec.presence},
         'window': [lo, hi], 'day_shift': spec.day_shift, '_ratios': spec.ratios,
+        '_having': {n: v[2] is not None for n, v in spec.per_group.items()},
         'sequences': {n: [] for n in spec.sequences},
         'sessions': {n: [] for n in spec.sessions},
         'group_days': {g: {} for g in spec.groups},
         'per_group': {n: {} for n in spec.per_group},
+        'per_group_having': {n: set() for n in spec.per_group},
+        'max_per_second': 0,
     }
+    sec, sec_n = None, 0
     last_seen = {n: {} for n in spec.sessions}
     pending = {n: {} for n in spec.sequences}
     chain = spec.chain
@@ -367,11 +371,18 @@ def scan(spec_raw, path, lo=None, hi=None):
                     out['groups'][g]['records'] += 1
                     out['groups'][g]['hours'][hour] += 1
                     out['group_days'][g][day] = out['group_days'][g].get(day, 0) + 1
-            for n, (grp, when) in spec.per_group.items():
+            s = int(t)
+            sec_n = sec_n + 1 if s == sec else 1
+            sec = s
+            out['max_per_second'] = max(out['max_per_second'], sec_n)
+            for n, (grp, when, having) in spec.per_group.items():
+                g = grp(row)
+                if g is None:
+                    continue
                 if when is None or when(row):
-                    g = grp(row)
-                    if g is not None:
-                        out['per_group'][n][g] = out['per_group'][n].get(g, 0) + 1
+                    out['per_group'][n][g] = out['per_group'][n].get(g, 0) + 1
+                if having is not None and having(row):
+                    out['per_group_having'][n].add(g)
             for n, (grp, match, gap) in spec.sessions.items():
                 if not match(row):
                     continue
@@ -563,8 +574,10 @@ def profile(results, top=40):
                               for n in (results[0]['sequences'] if results else {})},
         'session_gaps_s': {n: quantiles([d for r in results for d in r['sessions'].get(n, [])])
                            for n in (results[0]['sessions'] if results else {})},
-        'records_per_group': {n: quantiles([c for r in results for c in r['per_group'].get(n, {}).values()])
+        'records_per_group': {n: quantiles([c for r in results for g, c in r['per_group'].get(n, {}).items()
+                                            if not r['_having'].get(n) or g in r['per_group_having'][n]])
                               for n in (results[0]['per_group'] if results else {})},
+        'max_records_per_second': max((r['max_per_second'] for r in results), default=0),
         'groups_per_day': {g: (lambda v: {'min': min(v), 'median': statistics.median(v), 'max': max(v)}
                                if v else None)([n for r in results for d, n in full_days_of(r, r['group_days'][g])])
                            for g in (results[0]['group_days'] if results else {})},

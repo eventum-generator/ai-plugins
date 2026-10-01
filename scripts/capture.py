@@ -284,7 +284,8 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False, shift=None,
         (plugin, conf), = item.items()
         conf = conf or {}
         item[plugin] = conf
-        scale = 1 if set(conf.get('tags') or ()) & set(carrier) else base_scale  # carriers keep their rate
+        is_carrier = bool(set(conf.get('tags') or ()) & set(carrier))
+        scale = 1 if is_carrier else base_scale  # carriers keep their rate
         if plugin == 'time_patterns':
             for rel in conf.get('patterns') or []:
                 path = (gen_dir / rel).resolve()
@@ -310,6 +311,12 @@ def bound(gen_dir, cfg, patterns, window, days, scale=1, live=False, shift=None,
                         raise CaptureError('cron input: %s must be set explicitly' % key)
                 conf['start'] = iso(window)
                 conf['end'] = iso(end - timedelta(seconds=1))
+            elif move and is_carrier and not every_minute(conf['expression']):
+                # an hour-restricted carrier serves the moved schedules at any hour
+                fields = conf['expression'].split()
+                every = ' '.join(['*'] * 5 + fields[5:6]) if len(fields) == 6 else '* * * * * *'
+                notes.append('carrier %s runs at every hour as %s for the live check' % (conf['expression'], every))
+                conf['expression'] = every
             elif move and not every_minute(conf['expression']):
                 notes.append('schedule %s replaced by %s for the live check' % (conf['expression'], LIVE_CRON))
                 conf['expression'] = LIVE_CRON
