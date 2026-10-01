@@ -16,11 +16,11 @@
 - Every path inside the generator is relative; the directory is portable.
 - The shipped `generator.yml` writes `output/events.json` with `write_mode: overwrite` and runs with `eventum generate --path generator.yml --id <name> --live-mode true` without parameters or secrets.
 - `generator.yml` opens with a comment: source and version, output shape, daily volume and curve.
-- Every `time_patterns` oscillator and every `cron` input states `start` and `end` explicitly (`end: never` when shipped), a `linspace` input a finite range, a `timer` its `start`; capture tooling bounds exactly these keys. Anchors are midnights with an offset. A pattern file opens with a comment giving its band and records per day.
+- Every `time_patterns` oscillator and every `cron` input states `start` and `end` explicitly (`end: never` when shipped), a `linspace` input a finite range, a `timer` its `start`; capture tooling bounds exactly these keys. Anchors are midnights with an offset. A pattern file opens with a comment giving its band and timestamps per day (actions, for populations whose actions write several records).
 
 ## Output shape
 
-- ECS JSON, the default and the shape the Hub card describes best: the event mirrors the `sample_event.json` of the source's Elastic integration when one exists, otherwise a reasonable ECS shape; the native record goes to `event.original` as the source writes it. Top level `@timestamp`, `ecs.version`, `event.*`, `host.*`, `agent.*`; source data under its namespace (`winlog.*`, `nginx.*`); `related.*` always arrays; `event.sequence` only for sources that number their records, strictly increasing per host or source. Formatter `json`.
+- ECS JSON, the default and the shape the Hub card describes best: the event mirrors the `sample_event.json` of the source's Elastic integration when one exists, otherwise a reasonable ECS shape; the native record goes to `event.original` as the source writes it, a multi-line message with its lines joined by `\n`. Top level `@timestamp`, `ecs.version`, `event.*`, `host.*`, `agent.*`; source data under its namespace (`winlog.*`, `nginx.*`); `related.*` always arrays; `event.sequence` only for sources that number their records, strictly increasing per host or source. Formatter `json`.
 - Native records only, when the user feeds a parser: the line exactly as the source writes it, formatter `plain`; a native JSON record rendered with `module.json.dumps(obj, ensure_ascii=False, separators=(',', ':'))` to keep its key order and compactness. The catalog takes native JSON records, not native text lines.
 
 ## Parameters

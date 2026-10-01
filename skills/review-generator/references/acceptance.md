@@ -16,7 +16,7 @@ A generator is accepted when no finding is MEDIUM or HIGH. Each criterion names 
 | 2 | Every run exits 0 with an empty `-vvv` log (exit 0 alone proves nothing: render and format errors only reach the log); the shipped configuration runs out of the box with `--live-mode true`. | HIGH |
 | 3 | Every input timestamp yields exactly one record, except timestamps of a carrier input with nothing due. | MEDIUM |
 | 4 | Each population follows its own rhythm from its input: people a working day with a low night and presence following the same curve as volume; scheduled jobs their documented schedule; machine traffic may be flat. | MEDIUM |
-| 5 | Background is a normal period: failures a few percent of attempts with a monotone law, measurements within their usual range, no incident- or outage-like pattern, no single filler action dominating, every limit of the brief held. | MEDIUM |
+| 5 | Background is a normal period: failures at most a few percent of attempts with a monotone law, measurements within their usual range, no incident- or outage-like pattern, no single filler action dominating, every limit of the brief held. | MEDIUM |
 | 6 | Template state stays bounded over an endless run. | MEDIUM |
 | 7 | Live mode: records never ahead of the wall clock, in order, no catch-up burst, empty log. | MEDIUM |
 | 8 | Every template branch emits a record; every sample column read exists; every parameter and sample is validated with one readable error. | MEDIUM |
@@ -48,7 +48,7 @@ With a chain:
 | Default configuration, 14 days: memory series, speed, volume | 1 | 1 | 4, 6, 11 |
 | The same 14 days with a trivial template: Eventum's own memory curve | 1 | 1 | 6 |
 | Timestamps only, then the same moments replayed through the templates, 2 days | 1 | 1 | 3 |
-| Live: the shipped configuration for 20 s, then 90 s with the busiest hour shifted to now, rates scaled to about 80 records and schedules moved into the window | 1 | 1 | 2, 7 |
+| Live: the shipped configuration for 20 s, then 90 s with the busiest hour shifted to now, rates scaled to at least about 80 records and schedules moved into the window | 1 | 1 | 2, 7 |
 
 Four days hold four default-interval episodes; fourteen days make memory growth visible against Eventum's own; eighty live records show lag, order and catch-up. Timestamps of carrier inputs are left out of the replay; whether a carrier emits exactly the due records is judged from the template.
 
@@ -62,7 +62,7 @@ Four days hold four default-interval episodes; fourteen days make memory growth 
 - 13: episode values of every `presence` spec in each background capture, and background occurrences of every pair of chain steps; a pair linked by a value beyond the key that only episodes contain is flagged.
 - 14: spacing the actor keeps in background (sessions apart, cooldowns): a `sequences` timing of the actor's repeated action compared between `4_5_profile` (background) and `14_profile_anomaly`; a minimum only anomaly runs go below is a finding.
 - 17: `17_prefixes_in_background`, completions of the chain's first k steps; counts that stay high up to n-1 steps are a pile-up below the threshold.
-- 18: gaps, first start, start hours, distinct actors and keys per capture; `episodes_at_most` bounds the count a window can hold.
+- 18: gaps, first start, start hours, `starts_in_quiet_hours` (hours below a quarter of the busiest), distinct actors and keys per capture; `episodes_at_most` bounds the count a window can hold.
 
 Criteria 1, 8, 9, 10, 14, 16 and 17 need reading: the sample record against the reference records, the templates, the samples, the README.
 

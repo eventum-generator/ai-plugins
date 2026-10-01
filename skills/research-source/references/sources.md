@@ -10,7 +10,8 @@ In order of authority. Record the URL and the product version for every fact.
   - status, reason and error code tables;
   - the logging and audit settings that decide what is written and their defaults;
   - the administration chapters on the processes that emit events (authentication, sessions, connections, policy evaluation, scheduled jobs, error handling): which events one action writes, in what order, and what links them.
-- **Source code of the stated release**, for open-source products: format strings, message catalogs and serialisers of the tagged version are a field-complete specification; cite repository, tag and path.
+- **Source code of the stated release**, for open-source products: format strings, message catalogs and serialisers of the tagged version are a field-complete specification; cite repository, tag and path. Where it and the documentation disagree, the source code wins: documentation pages often keep examples from older versions.
+- **Release notes, changelogs and the history of the logging code** between the documented example and the stated version: new log categories and changed formats appear there first.
 - **Protocol and format standards** for how a record is framed: syslog RFC 5424 and RFC 3164 (header, priority, timestamp), RFC 5425/6587 (TCP framing), the CEF and LEEF specifications (header fields, escaping, extension keys), RFC 4180 for CSV.
 - **Raw records from maintained integrations.** Elastic: `github.com/elastic/integrations`, `packages/<package>/data_stream/<stream>/`:
   - `_dev/test/pipeline/test-*.log` (or `.json`) - raw input lines as the source emits them; `*-expected.json` - the parsed result;

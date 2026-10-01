@@ -98,7 +98,7 @@ spreader:
 
 - Per period the count is `int(ratio * factor)`, factors drawn from `[1-d, 1]`, `[1, 1+d]` or `[1-d, 1+d]` and reused from a shuffled pool. Mean count: `ratio - 0.5` for `mixed`, `ratio * (1 - d/2) - 0.5` for `decrease`, `ratio * (1 + d/2) - 0.5` for `increase`; exactly `ratio` with `deviation: 0`.
 - The spreader places timestamps inside the period: `uniform {low, high}` (`0 <= low < high <= 1`), `triangular {left, mode, right}`, `beta {a, b}`.
-- Several pattern files of one input add up: an hour-of-day curve is several files with a 1-day period anchored at a midnight, each covering a band (`low`/`high` = hour / 24); a weekly curve is a 7-day period anchored on a Monday.
+- Several pattern files of one input add up: an hour-of-day curve is several files with a 1-day period anchored at a midnight, each covering a band (`low`/`high` = hour / 24); a weekly curve is a 7-day period anchored on a Monday. There is no weekday mask: a working-week band takes one 7-day file per weekday.
 - Periods are counted from `start` in live mode too, so a midnight anchor keeps bands on clock hours; the anchor's offset decides which clock (anchor `+00:00` with `--timezone Asia/Tokyo` puts the 12:00 band at 21:00 JST).
 - Pattern files are plain YAML: no `${params.*}`.
 

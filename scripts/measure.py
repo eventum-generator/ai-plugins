@@ -189,7 +189,12 @@ class Spec:
         pres = dict(raw.get('presence') or {})
         if raw.get('actor'):
             pres.setdefault('actor', raw['actor'])
-        self.presence = {n: compile_value(v) for n, v in pres.items()}
+        self.presence = {}
+        for n, v in pres.items():  # a value spec, or {"value": spec, "when": condition}
+            if 'value' in v:
+                self.presence[n] = (compile_value(v['value']), compile_cond(v.get('when')))
+            else:
+                self.presence[n] = (compile_value(v), None)
         self.day_shift = float(raw.get('day_start_hour', 0)) * 3600
         self.sequences = {n: (compile_value(v['group']), compile_cond(v['from']), compile_cond(v['to']))
                           for n, v in (raw.get('sequences') or {}).items()}
@@ -361,7 +366,9 @@ def scan(spec_raw, path, lo=None, hi=None):
                 elif first(row):
                     pending[n][g] = t
             k = chain_key(chain, row) if chain else None
-            for n, get in spec.presence.items():
+            for n, (get, when) in spec.presence.items():
+                if when is not None and not when(row):
+                    continue
                 v = get(row)
                 if v is not None:
                     out['presence'][n].setdefault(v, []).append((t, k))
@@ -532,7 +539,7 @@ def _after(times, t, around):
     return sum(1 for x in times if t < x <= t + around)
 
 
-def episodes_report(on, off, interval_h, window_start, around=1800):
+def episodes_report(on, off, interval_h, window_start, around=1800, hourly=None):
     """Recurrence, and the actor's activity around each episode: before it against
     the actor before ordinary background records of the chain's first step, after it
     against the actor after ordinary records of the last step (the same kind of
@@ -596,6 +603,8 @@ def episodes_report(on, off, interval_h, window_start, around=1800):
             'gaps_hours': gaps, 'gap_tolerance_hours': None if w is None else round(w / 2, 2),
             'gaps_outside_tolerance': [g for g in gaps if w is not None and abs(g - interval_h) > w / 2],
             'start_hours_utc': [int(t // 3600 % 24) for t in s_times],
+            'starts_in_quiet_hours': None if not hourly else sum(
+                1 for t in s_times if hourly[int(t // 3600 % 24)] < 0.25 * max(hourly)),
             'distinct_actors': len({c[3] for c in starts}), 'distinct_keys': len({c[2] for c in starts}),
             'spans_seconds': sorted(round(c[1] - c[0]) for c in starts),
             'around': neigh,
@@ -780,8 +789,10 @@ def report(spec_path, manifest_path):
             spec_raw, [r['capture'] for r in off_caps],
             [(parse_time(r['window_start']), parse_time(r['window_end'])) for r in off_caps])
         interval = man.get('default_interval_hours')
-        rep['15_18_episodes_default'] = episodes_report(on, off, interval, window)
-        rep['18_episodes_short'] = {r['name']: episodes_report([scanned[r['name']]], off, r.get('interval'), window)
+        quiet = rep['4_5_profile']['hourly_pct_utc'] if rep.get('4_5_profile') else None
+        rep['15_18_episodes_default'] = episodes_report(on, off, interval, window, hourly=quiet)
+        rep['18_episodes_short'] = {r['name']: episodes_report([scanned[r['name']]], off, r.get('interval'), window,
+                                                               hourly=quiet)
                                     for r in short_runs}
     rep['flags'] = flags(rep)
     return rep
