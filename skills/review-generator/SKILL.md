@@ -12,7 +12,7 @@ An independent acceptance review: fresh captures measured against the acceptance
 - Run in a context that did not build the generator (a subagent or a new session); the author's notes and reports are claims to verify, not evidence.
 - `python3 <skill dir>/../../scripts/capture.py doctor` reports `ok`.
 - Inputs: the generator directory (for a content-pack PR: `gh pr checkout <number>` in a worktree of a content-packs clone); `.content-design/<name>/brief.md` and `reference/` for the native format when they exist (otherwise the README's references); `measure.json` when it exists (otherwise write it from the README per `../create-generator/references/measure-spec.md`).
-- The review writes only `.content-design/<name>/review.md` (earlier ones kept as `review-<n>.md`), `review-digest.json`, `review-report.json`, `reviewed/` (a copy of the reviewed files), `captures/review/`, `measure.json` when it was missing, and its feedback.
+- The review writes only `.content-design/<name>/review.md` (earlier ones kept as `review-<n>.md`), `review-digest.json`, `review-report.json`, `reviewed/` (a copy of the reviewed files), `captures/review/`, `measure.json` when it was missing or incomplete, and its feedback.
 
 ## References
 

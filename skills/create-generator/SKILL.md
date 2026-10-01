@@ -50,7 +50,7 @@ Write each decision down with the brief fact behind it.
 - **Background** - a normal period of the source, not an incident or an outage: failures a few percent of attempts with a monotone law (one failure more common than two), retries and give-ups; occasional bursts carried by a few actors; measurements within their usual range, counters monotone; every limit in the brief holds.
 - **Anomaly chain** - included by default when the source records activity a detection or alert rule targets and the brief has a chain candidate; the user may leave it out. Designed per `references/anomaly-chain.md`; without a chain, every chain item below is skipped.
 - **Bounded state** - every list, dict, heap or queue in `shared` / `locals` has a fixed key set, a cap, or eviction on every path.
-- **Measurement spec** - `.content-design/<name>/measure.json` per `references/measure-spec.md`: class, groups for every population and outcome the README will state, sequences for the delays the brief states, the episode actor and pairs, the chain with every linking field. It fixes what the data must show before the build.
+- **Measurement spec** - `.content-design/<name>/measure.json` per `references/measure-spec.md`: class, groups for every population and outcome the README will state, sequences for the delays the brief states, sessions for the spacing actors keep, the episode actor and pairs, presence limited to a step for every value an episode writes into it, the chain with every linking field. It fixes what the data must show before the build.
 
 ### 2. Build
 

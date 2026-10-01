@@ -198,6 +198,8 @@ class Spec:
         self.day_shift = float(raw.get('day_start_hour', 0)) * 3600
         self.sequences = {n: (compile_value(v['group']), compile_cond(v['from']), compile_cond(v['to']))
                           for n, v in (raw.get('sequences') or {}).items()}
+        self.sessions = {n: (compile_value(v['group']), compile_cond(v['match']), float(v['gap']))
+                         for n, v in (raw.get('sessions') or {}).items()}
         chain = raw.get('chain')
         self.chain = None
         if chain:
@@ -306,7 +308,10 @@ def scan(spec_raw, path, lo=None, hi=None):
         'presence': {n: {} for n in spec.presence},
         'window': [lo, hi], 'day_shift': spec.day_shift,
         'sequences': {n: [] for n in spec.sequences},
+        'sessions': {n: [] for n in spec.sessions},
+        'group_days': {g: {} for g in spec.groups},
     }
+    last_seen = {n: {} for n in spec.sessions}
     pending = {n: {} for n in spec.sequences}
     chain = spec.chain
     state, keys, last_chain_end = {}, set(), {}
@@ -354,6 +359,17 @@ def scan(spec_raw, path, lo=None, hi=None):
                 if pred(row):
                     out['groups'][g]['records'] += 1
                     out['groups'][g]['hours'][hour] += 1
+                    out['group_days'][g][day] = out['group_days'][g].get(day, 0) + 1
+            for n, (grp, match, gap) in spec.sessions.items():
+                if not match(row):
+                    continue
+                g = grp(row)
+                if g is None:
+                    continue
+                prev_t = last_seen[n].get(g)
+                if prev_t is not None and t - prev_t > gap:
+                    out['sessions'][n].append(t - prev_t)  # quiet time between two sessions
+                last_seen[n][g] = t
             a = spec.actor(row)
             if a is not None:
                 actor_times.setdefault(a, []).append(t)
@@ -461,6 +477,12 @@ def full_days(res):
     return out
 
 
+def full_days_of(res, days):
+    """(day, count) of `days` restricted to the days wholly inside the capture window."""
+    inside = {d for d, _ in full_days(res)}
+    return [(d, days.get(d, 0)) for d in sorted(inside)]
+
+
 def quantiles(values):
     if not values:
         return None
@@ -506,6 +528,11 @@ def profile(results, top=40):
         'outside_window': sum(r['outside_window'] for r in results),
         'sequence_delays_s': {n: quantiles([d for r in results for d in r['sequences'].get(n, [])])
                               for n in (results[0]['sequences'] if results else {})},
+        'session_gaps_s': {n: quantiles([d for r in results for d in r['sessions'].get(n, [])])
+                           for n in (results[0]['sessions'] if results else {})},
+        'groups_per_day': {g: (lambda v: {'min': min(v), 'median': statistics.median(v), 'max': max(v)}
+                               if v else None)([n for r in results for d, n in full_days_of(r, r['group_days'][g])])
+                           for g in (results[0]['group_days'] if results else {})},
         'unparsed': sum(r['unparsed'] for r in results),
         'no_time': sum(r['no_time'] for r in results),
         'order_breaks': sum(r['order_breaks'] for r in results),
@@ -730,6 +757,8 @@ def state_growth(run, base=None):
     excess = (last - second) - ((b[1] - b[0]) if b else 0)
     return {'rss_second_quarter_mb': round(second), 'rss_last_quarter_mb': round(last),
             'baseline_growth_mb': round(b[1] - b[0]) if b else None,
+            'peak_over_baseline_mb': (run['peak_mb'] - base['peak_mb'])
+            if base and run.get('peak_mb') and base.get('peak_mb') else None,
             'excess_growth_mb': round(excess),
             'excess_growth_pct': round(100.0 * excess / second, 1) if second else None,
             'peak_mb': run.get('peak_mb')}
@@ -816,7 +845,8 @@ def flags(rep):
     if prof['order_breaks']:
         out.append('2: %d records out of time order' % prof['order_breaks'])
     st = rep.get('6_state')
-    if st and st['excess_growth_pct'] is not None and st['excess_growth_pct'] > 10 and st['excess_growth_mb'] > 50:
+    if (st and st['excess_growth_pct'] is not None and st['excess_growth_pct'] > 10 and st['excess_growth_mb'] > 50
+            and (st['peak_over_baseline_mb'] is None or st['peak_over_baseline_mb'] > 100)):
         out.append('6: memory grew %s MB (%s%%) more than Eventum alone between the second and last '
                    'quarter of the long run' % (st['excess_growth_mb'], st['excess_growth_pct']))
     live = rep.get('7_live')
@@ -847,6 +877,9 @@ def flags(rep):
         if not ep:
             continue
         for cap in ep['captures']:
+            q = cap.get('starts_in_quiet_hours')
+            if q and q > 0.25 * cap['episodes']:
+                out.append('18: %d of %d episode starts in quiet hours in %s' % (q, cap['episodes'], cap['path']))
             if cap['gaps_outside_tolerance']:
                 out.append('18: gaps %s h outside %s ± %s h in %s' % (
                     cap['gaps_outside_tolerance'], ep['interval_hours'], cap['gap_tolerance_hours'], cap['path']))
