@@ -11,6 +11,10 @@
         a step or a key.
     measure.py sample CAPTURE [--nth N] [--contains TEXT]
         One record printed byte for byte, for a README sample.
+    measure.py readme REPORT ...
+        Every README figure as a range by the README rule, from report files.
+    measure.py check-readme README REPORT ...
+        README event-type shares that miss a measured value.
     measure.py diff OLD_DIR NEW_DIR
         Unified diff of two generator directories (a reviewed copy and the
         current files), for a re-review.
@@ -308,7 +312,7 @@ def scan(spec_raw, path, lo=None, hi=None):
     out = {
         'path': path, 'records': 0, 'unparsed': 0, 'no_time': 0, 'excluded': 0,
         'outside_window': 0, 'order_breaks': 0, 'first': None, 'last': None,
-        'days': {}, 'hours': [0] * 24, 'classes': {},
+        'days': {}, 'hours': [0] * 24, 'classes': {}, 'class_days': {},
         'groups': {g: {'records': 0, 'hours': [0] * 24} for g in spec.groups},
         'actors': {}, 'first_step': {}, 'last_step': {}, 'chains': [], 'step_hits': [], 'keys': [],
         'presence': {n: {} for n in spec.presence},
@@ -366,6 +370,8 @@ def scan(spec_raw, path, lo=None, hi=None):
             c = spec.cls(row)
             if c is not None:
                 out['classes'][c] = out['classes'].get(c, 0) + 1
+                cd = out['class_days'].setdefault(day, {})
+                cd[c] = cd.get(c, 0) + 1
             for g, pred in spec.groups.items():
                 if pred(row):
                     out['groups'][g]['records'] += 1
@@ -521,6 +527,25 @@ def quantiles(values):
     return {'n': len(v), 'min': round(v[0], 2), 'p50': pick(0.5), 'p95': pick(0.95), 'max': round(v[-1], 2)}
 
 
+def drift(results):
+    """Classes whose daily rate in the second half of a capture differs from the
+    first half by more than 2.5x (pools that fill, counters that saturate)."""
+    out = {}
+    for r in results:
+        days = [d for d, _ in full_days(r)]
+        if len(days) < 6:
+            continue
+        half = len(days) // 2
+        first, second = days[:half], days[half:]
+        for c in r['classes']:
+            a = sum(r['class_days'].get(d, {}).get(c, 0) for d in first) / len(first)
+            b = sum(r['class_days'].get(d, {}).get(c, 0) for d in second) / len(second)
+            if a + b >= 2 and (max(a, b) > 2.5 * max(min(a, b), 0.1)):
+                out[c] = {'first_half_per_day': round(a, 2), 'second_half_per_day': round(b, 2),
+                          'capture': r['path']}
+    return out
+
+
 def profile(results, top=40):
     total = sum(r['records'] for r in results)
     classes, groups, hours = {}, {}, [0] * 24
@@ -562,6 +587,7 @@ def profile(results, top=40):
         'per_weekday_utc': {d: {'min': min(v), 'mean': round(statistics.mean(v)), 'max': max(v)}
                             for d, v in weekday.items()},
         'class_count': len(classes), 'class_share_pct': shares, 'class_share_pct_per_capture': share_range,
+        'class_drift': drift(results),
         'class_per_day': {c: round(n / max(1, len(per_day)), 2) for c, n in ranked[:top]},
         'hourly_pct_utc': curve(hours),
         'hourly_pct_utc_per_capture': [[min(c), max(c)] for c in zip(*[curve(r['hours']) for r in results])]
@@ -911,6 +937,9 @@ def flags(rep):
         out.append('3: %d of %d timestamps yielded no record' % (chk['missing'], chk['timestamps']))
     if chk and chk.get('extra'):
         out.append('3: %d records more than the %d timestamps' % (chk['extra'], chk['timestamps']))
+    for c, d in ((rep.get('11_profile_default') or {}).get('class_drift') or {}).items():
+        out.append('5: %s drifts from %s to %s a day between the halves of %s'
+                   % (c, d['first_half_per_day'], d['second_half_per_day'], d['capture']))
     prof = rep['4_5_profile'] or {'unparsed': 0, 'no_time': 0, 'order_breaks': 0}
     if not rep['4_5_profile']:
         out.append('2: no background or long capture to measure')
@@ -1000,6 +1029,128 @@ def digest(root, previous=None):
     return out
 
 
+# --- README numbers ----------------------------------------------------------
+
+
+def _round(x, up, share):
+    """Two significant digits (one decimal for shares from 0.1), moved outward
+    only where rounding to nearest would cross x."""
+    import math
+    if x == 0:
+        return 0.0
+    if share and abs(x) >= 0.1:
+        d = 1
+    else:  # two significant digits, three from 1000 so counts keep their shape
+        d = (2 if abs(x) >= 1000 else 1) - int(math.floor(math.log10(abs(x))))
+    q = 10.0 ** -d
+    v = round(x / q) * q
+    if up and v < x:
+        v += q
+    if not up and v > x:
+        v -= q
+    return round(v, max(d, 0))
+
+
+def fmt_range(values, share=False):
+    """README range containing every measured value, rounded per the rule."""
+    values = [v for v in values if v is not None]
+    if not values:
+        return None
+    lo, hi = min(values), max(values)
+    a, b = _round(lo, False, share), _round(hi, True, share)
+    text = lambda v: ('%g' % v)  # noqa: E731
+    return text(a) if a == b else '%s-%s' % (text(a), text(b))
+
+
+def readme_numbers(reports):
+    """Every README figure as a ready range, from one or more report.json files
+    (older reports may lack some figures; those are left out)."""
+    def profs(key):
+        return [r.get(key) for r in reports if r.get(key)]
+
+    def vals(items):
+        return [v for v in items if v is not None]
+    out = {}
+    default, background = profs('11_profile_default'), profs('4_5_profile')
+    if default:
+        classes = sorted({c for p in default for c in p.get('class_share_pct_per_capture', {})},
+                         key=lambda c: -max(p['class_share_pct'].get(c, 0) for p in default))
+        out['class_share_pct'] = {c: fmt_range([v for p in default for v in p.get('class_share_pct_per_capture', {}).get(c, [])],
+                                               share=True) for c in classes}
+        out['class_per_day'] = {c: fmt_range(vals([p.get('class_per_day', {}).get(c) for p in default])) for c in classes}
+        out['records_per_day'] = fmt_range([p['per_day_utc'][k] for p in default if p.get('per_day_utc')
+                                            for k in ('min', 'max')])
+        out['groups_default'] = {}
+        for g in default[0].get('groups', {}):
+            shares = [v for p in default for v in (p['groups'].get(g, {}).get('share_pct_per_capture') or [])]
+            per_day = [p['groups_per_day'][g][k] for p in default if (p.get('groups_per_day') or {}).get(g)
+                       for k in ('min', 'max')]
+            out['groups_default'][g] = {'share_pct': fmt_range(shares, share=True), 'per_day': fmt_range(per_day)}
+        mean = [statistics.mean(x) for x in zip(*[p['hourly_pct_utc'] for p in default])]
+        out['busiest_hours_utc'] = sorted(sorted(range(24), key=lambda h: -mean[h])[:3])
+    if background:
+        out['groups_background_share_pct'] = {
+            g: fmt_range([v for p in background for v in (p['groups'].get(g, {}).get('share_pct_per_capture') or [])], share=True)
+            for g in background[0].get('groups', {})}
+        out['ratios_background_pct'] = {
+            n: fmt_range([v for p in background if (p.get('ratios_pct') or {}).get(n)
+                          for v in (p['ratios_pct'][n]['min_pct'], p['ratios_pct'][n]['max_pct'])], share=True)
+            for n in (background[0].get('ratios_pct') or {})}
+        out['sequence_p50_s'] = {n: fmt_range([p['sequence_delays_s'][n]['p50'] for p in background
+                                               if (p.get('sequence_delays_s') or {}).get(n)])
+                                 for n in (background[0].get('sequence_delays_s') or {})}
+        out['session_gap_min_s'] = {n: fmt_range([p['session_gaps_s'][n]['min'] for p in background
+                                                  if (p.get('session_gaps_s') or {}).get(n)])
+                                    for n in (background[0].get('session_gaps_s') or {})}
+    eps = [c for r in reports if r.get('15_18_episodes_default') for c in r['15_18_episodes_default']['captures']]
+    if eps:
+        out['episode_gaps_h'] = fmt_range([g for c in eps for g in c['gaps_hours']])
+        out['episode_spans_s'] = fmt_range([x for c in eps for x in c['spans_seconds']])
+        out['episode_start_hours_utc'] = fmt_range([h for c in eps for h in c.get('start_hours_utc', [])])
+        out['first_start_hours'] = fmt_range(vals([c.get('first_start_hours') for c in eps]))
+    pairs = [r['13_step_pairs_in_background'] for r in reports if r.get('13_step_pairs_in_background')]
+    if pairs:
+        out['background_step_pairs'] = {k: fmt_range([v for p in pairs if isinstance(p.get(k), dict) for v in p[k]['counts']])
+                                        for k in pairs[0]}
+    pres = [r['13_presence'] for r in reports if isinstance(r.get('13_presence'), dict)]
+    if pres:
+        out['presence_min_per_capture'] = {
+            n: min((x['min_records_per_capture'] for p in pres if isinstance(p.get(n), dict) for x in p[n].get('lowest', [])),
+                   default=None) for n in pres[0]}
+    return out
+
+
+def check_readme(readme, reports):
+    """Event-type rows of the README table whose share range misses a measured
+    per-capture share; returns mismatches."""
+    nums = readme_numbers(reports)
+    measured = {}
+    for r in reports:
+        p = r.get('11_profile_default')
+        if p:
+            for c, (lo, hi) in p['class_share_pct_per_capture'].items():
+                measured.setdefault(c, []).extend([lo, hi])
+    out = []
+    with open(readme, encoding='utf-8') as fh:
+        for line in fh:
+            if not line.startswith('|'):
+                continue
+            cells = [c.strip().strip('`') for c in line.strip().strip('|').split('|')]
+            name = next((c for c in cells if c in measured), None)
+            if not name:
+                continue
+            m = re.search(r'([\d.]+)\s*(?:-|–)\s*([\d.]+)\s*%', line) or re.search(r'([\d.]+)\s*%', line)
+            if not m:
+                continue
+            lo = float(m.group(1))
+            hi = float(m.group(2)) if m.lastindex == 2 else lo
+            bad = [v for v in measured[name] if v < lo - 1e-9 or v > hi + 1e-9]
+            if bad:
+                out.append({'class': name, 'readme': m.group(0), 'measured': [min(measured[name]), max(measured[name])],
+                            'suggested': nums.get('class_share_pct', {}).get(name)})
+    return out
+
+
 # --- commands -----------------------------------------------------------------
 
 
@@ -1026,6 +1177,11 @@ def main():
     s.add_argument('capture')
     s.add_argument('--nth', type=int, help='default: the middle matching record')
     s.add_argument('--contains')
+    rd = sub.add_parser('readme', help='every README figure as a range, from report files')
+    rd.add_argument('reports', nargs='+')
+    ck = sub.add_parser('check-readme', help='README event-type shares against report files')
+    ck.add_argument('readme')
+    ck.add_argument('reports', nargs='+')
     df = sub.add_parser('diff', help='unified diff of two generator directories')
     df.add_argument('old')
     df.add_argument('new')
@@ -1073,6 +1229,17 @@ def main():
                 sys.stdout.buffer.write(line if line.endswith(b'\n') else line + b'\n')
                 return 0
         return 1
+    if args.cmd in ('readme', 'check-readme'):
+        reps = []
+        for path in args.reports:
+            with open(path, encoding='utf-8') as fh:
+                reps.append(json.load(fh))
+        if args.cmd == 'readme':
+            emit(readme_numbers(reps))
+            return 0
+        bad = check_readme(args.readme, reps)
+        emit({'mismatches': bad})
+        return 1 if bad else 0
     if args.cmd == 'diff':
         sys.stdout.write(diff(args.old, args.new))
         return 0

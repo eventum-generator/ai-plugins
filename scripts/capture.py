@@ -832,7 +832,7 @@ def main():
     r = sub.add_parser('run', parents=[common], help='the protocol run set')
     r.add_argument('--set', choices=sorted(SETS), default='author')
     r.add_argument('--days', type=int, default=4)
-    r.add_argument('--long-days', type=int, default=14)
+    r.add_argument('--long-days', type=int, default=7)
     r.add_argument('--off-runs', type=int, help='background runs (default: by --set)')
     r.add_argument('--on-runs', type=int, help='anomaly runs at the default interval (default: by --set)')
     r.add_argument('--long-runs', type=int, default=1,
