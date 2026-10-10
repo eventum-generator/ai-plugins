@@ -1063,17 +1063,21 @@ def _round(x, up, share, bound=None):
 
 def fmt_range(values, share=False):
     """README range: the measured values widened by a margin for run-to-run spread
-    (each end by (max/min) ** 0.25, so a stable value stays tight and a variable one
-    never reaches zero), rounded per the rule."""
+    (each end by (max/min) ** e, e = max(1/4, 1/n) for n observations, so a stable
+    value stays tight, a variable one never reaches zero and a figure resting on
+    few observations gets room), rounded per the rule."""
     values = [v for v in values if v is not None]
     if not values:
         return None
     m_lo, m_hi = lo, hi = min(values), max(values)
+    e = max(0.25, 1.0 / len(values))  # few observations (a median per report): a wider margin
     if lo > 0 and hi > lo:
-        k = (hi / lo) ** 0.25
+        k = (hi / lo) ** e
         lo, hi = lo / k, hi * k
+    elif lo > 0 and len(values) <= 4:  # one repeated value: no spread to scale from
+        lo, hi = lo * 0.9, hi * 1.1
     elif hi > 0 and lo == 0:
-        hi *= 1.25
+        hi *= 1 + e
     a, b = _round(lo, False, share, m_lo), _round(hi, True, share, m_hi)
     text = lambda v: ('%g' % v)  # noqa: E731
     return text(a) if a == b else '%s-%s' % (text(a), text(b))

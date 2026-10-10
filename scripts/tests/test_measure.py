@@ -237,8 +237,10 @@ class ReadmeRangeTest(unittest.TestCase):
         self.assertEqual(measure.fmt_range([32, 100]), '24-130')       # margin, never zero
         self.assertEqual(measure.fmt_range([3.28, 7.38], share=True), '2.7-9')
         self.assertEqual(measure.fmt_range([1093, 1161]), '1080-1180')
-        self.assertEqual(measure.fmt_range([0, 7]), '0-8.8')
-        self.assertEqual(measure.fmt_range([5, 5]), '5')
+        self.assertEqual(measure.fmt_range([0, 7, 3, 5]), '0-8.8')
+        # three medians, one per report: wider room than many daily values
+        self.assertEqual(measure.fmt_range([15.2, 17.1, 18.7]), '14-20')
+        self.assertEqual(measure.fmt_range([5, 5]), '4.5-5.5')
 
 
 class DiffTest(unittest.TestCase):
