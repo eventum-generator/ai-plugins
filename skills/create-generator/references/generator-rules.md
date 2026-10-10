@@ -41,9 +41,10 @@
   {%- endif -%}
   ```
 
-  An operation that can raise (`module.ipaddress.ip_network`) runs after storing its message, so a failure still ends the run after one error:
+  An operation that can raise (`module.ipaddress.ip_network`) runs after storing its message, so a failure still ends the run after one error. That error carries the operation's own message, which names the value but not the parameter, so a wrong type is rejected by `invalid()` first:
 
   ```jinja
+  {%- if params.vpn_subnet is not string -%}{{- invalid('vpn_subnet must be an IPv4 network') -}}{%- endif -%}
   {%- do shared.set('invalid', 'vpn_subnet must be an IPv4 network') -%}
   {%- set net = module.ipaddress.ip_network(params.vpn_subnet) -%}
   {%- do shared.pop('invalid') -%}
