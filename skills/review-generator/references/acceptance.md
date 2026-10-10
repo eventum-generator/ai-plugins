@@ -36,6 +36,12 @@ With a chain:
 | 17 | A guard, if any, follows the guard rules; no pile-up just below the chain threshold. | MEDIUM |
 | 18 | Recurrence follows its rules at the default and a short interval: gaps within interval ± w/2, first start, start hours on the population's curve, rotation, no skipped or replayed episodes; the parameter range excludes intervals the design cannot serve. | MEDIUM |
 
+Every generator:
+
+| # | Criterion | Failure |
+|---|---|---|
+| 19 | The generator is as simple as its data allows: inputs, pattern files, templates and state could not be markedly fewer or plainer for the same data; a missing Eventum capability is not worked around with piles of files or intricate logic but disclosed as a limitation. | MEDIUM |
+
 ## Captures
 
 `capture.py run <generator> --out <dir> --set author|review` (scripts at the plugin root) runs the set in parallel under host slots, each run on a bounded copy of the generator, and writes `manifest.json`; `capture.py live` adds the live check. The window starts on a Monday midnight UTC.

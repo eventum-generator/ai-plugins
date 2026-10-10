@@ -62,6 +62,11 @@
 - **Multi-source** (workstation agents, auditd, EDR, web servers, fleets): a pool of instances; correlations (session, process tree, sequence numbers) live per instance.
 - **Single-source** (firewall, DNS resolver, load balancer, proxy, broker): usually one instance; correlations (flow, session, address pair) span the traffic through it.
 
+## Inputs
+
+- Populations that follow the same curve share one input; the template divides its timestamps between them by weight.
+- A curve takes the fewest pattern files that give its shape: one file per band or per day, with a shaped spreader (`triangular`, `beta`) rather than stacked uniform bands.
+
 ## Templates
 
 - One template per record family, named after what it produces (`query.json.jinja`, `syscall-execve.json.jinja`); `event.json.jinja` for a single one; aliases descriptive.

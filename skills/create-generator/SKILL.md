@@ -88,6 +88,7 @@ Show the user the location, event types with shares, daily volume and rhythm, fi
 
 ## Rules
 
+- The generator is as simple as its data allows, so people can read, change and maintain it: few inputs and files, one clear flow per template, no machinery the data does not need. Where Eventum lacks a capability, the design takes the simplest form that keeps the data realistic, the gap is named in the README's Limitations, and the missing capability is reported as Eventum feedback; it is never worked around with piles of files, intricate logic or a departure from these conventions.
 - Native format as in the brief's reference records; inferred parts named as inferred in the README.
 - With a chain, episodes are indistinguishable from background except through the complete chain.
 - Heavy work runs through the scripts, which hold host slots; nothing from `.content-design/` goes into the generator directory.
