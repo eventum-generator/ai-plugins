@@ -18,17 +18,17 @@ Establishes, from primary sources, everything a generator needs to imitate one l
 
 In order of authority; every fact carries its URL and the product version.
 
-- **Vendor documentation of the chosen version** (log message reference, syslog / CEF / LEEF guide, event or audit reference, field dictionary; often a separate document per release; version-specific pages beat "latest"): the event catalog with severities and fields, field value lists, units and formats, status and error code tables, the logging settings that decide what is written and their defaults, and the administration chapters on the processes that emit events - which records one action writes, in what order, and what links them.
-- **Source code of the stated release** for open-source products: format strings, message catalogs and serialisers of the tagged version are a field-complete specification (cite repository, tag and path). Where code and documentation disagree, the code wins: documentation often keeps older examples. Release notes, changelogs and the history of the logging code show new categories and changed formats first.
-- **Protocol standards** for framing: syslog RFC 5424 / 3164, RFC 5425 / 6587 (TCP framing), the CEF and LEEF specifications, RFC 4180 for CSV.
-- **Raw records of maintained integrations.** Elastic (`github.com/elastic/integrations`, `packages/<package>/data_stream/<stream>/`): `_dev/test/pipeline/test-*.log` raw lines with `*-expected.json`, `sample_event.json`, `fields/*.yml`, `elasticsearch/ingest_pipeline/*.yml` (native field to ECS). Other parsers with fixtures serve alike; fixtures are sometimes hand-made, so a line the source cannot write is checked against the code or a real record.
-- **Published real datasets** (OTRF Security-Datasets): record shapes and co-occurrence of events.
-- Supporting only: detection content (SigmaHQ: which fields rules read, the basis for chain candidates), issue trackers and posts with pasted records (a complete record of a stated version; an older one confirms serialisation only), `logstash-patterns-core` ECS v1 patterns (field names when no Elastic integration exists), blogs (corroboration).
+- **Vendor documentation of the chosen version** (log or event reference, format guide, field dictionary; version-specific pages beat "latest").
+- **Source code of the tagged release**, for open-source products: format strings and serialisers are a field-complete specification and win over documentation, which often keeps older examples; release notes and the history of the logging code show format changes first.
+- **Format standards** for framing: syslog RFCs, CEF, LEEF.
+- **Raw records of maintained integrations**: Elastic `packages/<package>/data_stream/<stream>/` (`_dev/test/pipeline/` fixtures, `sample_event.json`, the ingest pipeline for the ECS mapping); fixtures can be hand-made, so a line the source cannot write is checked against the code.
+- **Published datasets** (OTRF Security-Datasets): real shapes and co-occurrence of events.
+- Supporting only: detection rules (SigmaHQ: fields rules read, the basis for chain candidates), posts and issue trackers with complete pasted records, `logstash-patterns-core` ECS patterns (field names without an Elastic integration).
 
 ## Process
 
 1. **Identify the stream** - `vendor:product:stream`, version, transport and encoding. Run the catalog check (brief section 2) now: an existing or in-progress generator of the same stream ends the research with a proposal to extend it.
-2. **Read the vendor documentation** of the chosen version in full for every part that governs the stream, not only the field tables. It is the basis for field meanings, value domains, which records one action writes and in what order, and which values change together; integration fixtures and datasets supply raw records and fill gaps, not replace it.
+2. **Read the vendor documentation** in full for every part that governs the stream - the event catalog, field values and units, status and error codes, logging settings and their defaults, and the chapters on the processes that emit events - not only the field tables. It is the basis for field meanings, value domains, which records one action writes, in what order and with which links; fixtures and datasets supply raw records and fill gaps, not replace it.
 3. **Collect records** - for every event class, a complete raw record of the chosen version, saved verbatim under `reference/`; integration fixtures are the fastest complete source.
 4. **Fill the brief** section by section. Frequencies, volumes and timing come from documentation or datasets; without a published basis they are marked synthetic with the reason.
 5. **Chain candidates** - when the source records activity a detection or alert rule targets, built only from documented records and ordinary activity the source really produces, so that every step also occurs outside the chain.
