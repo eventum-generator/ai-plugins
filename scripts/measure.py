@@ -911,7 +911,7 @@ def report(spec_path, manifest_path):
                if r.get('cpu_s') and r.get('lines') and r['kind'] in ('off', 'on', 'short', 'long')}
     if per_run:
         rep['speed'] = {'records_per_cpu_s_lowest': min(per_run.values()), 'records_per_cpu_s_per_run': per_run,
-                        'note': 'CPU seconds vary with host load less than wall seconds; the README takes the lowest'}
+                        'note': 'parallel runs understate speed; the README takes an isolated one-day run'}
     if man.get('has_chain') and spec_raw.get('chain'):
         rep['12_chains'] = chains_report(off, on + short)
         rep['13_presence'] = presence(off, on + short)
@@ -985,9 +985,14 @@ def flags(rep):
             out.append('13: episode %s values absent from some background: %s'
                        % (name, pr['absent_in_some_background'][:10]))
     for pair, v in (rep.get('13_step_pairs_in_background') or {}).items():
-        if v['linked'] and not any(v['counts']):
+        if not v['linked']:
+            continue
+        if not any(v['counts']):
             out.append('13: chain %s, linked by a value beyond the key, never occur in background: '
                        'only episodes contain them' % pair)
+        elif min(v['counts']) == 0 or statistics.mean(v['counts']) < 5:
+            out.append('13: chain %s, linked by a value beyond the key, are thin in background: %s per capture'
+                       % (pair, v['counts']))
     bg = (rep.get('4_5_profile') or {}).get('session_gaps_s') or {}
     an = (rep.get('14_profile_anomaly') or {}).get('session_gaps_s') or {}
     for name, b in bg.items():
@@ -1083,6 +1088,12 @@ def fmt_range(values, share=False):
     return text(a) if a == b else '%s-%s' % (text(a), text(b))
 
 
+def full_days_count(prof):
+    """Days behind a profile's per-day figures (an estimate from its weekday table)."""
+    days = sum(1 for _ in (prof.get('per_weekday_utc') or {}))
+    return range(max(days, 1))
+
+
 def readme_numbers(reports):
     """Every README figure as a ready range, from one or more report.json files
     (older reports may lack some figures; those are left out)."""
@@ -1096,8 +1107,13 @@ def readme_numbers(reports):
     if default:
         classes = sorted({c for p in default for c in p.get('class_share_pct_per_capture', {})},
                          key=lambda c: -max(p['class_share_pct'].get(c, 0) for p in default))
-        out['class_share_pct'] = {c: fmt_range([v for p in default for v in p.get('class_share_pct_per_capture', {}).get(c, [])],
-                                               share=True) for c in classes}
+        def share_values(c):
+            vals = [v for p in default for v in p.get('class_share_pct_per_capture', {}).get(c, [])]
+            # counting noise of a rare class: widen by two Poisson deviations of its records per run
+            n = min((p.get('class_per_day', {}).get(c, 0) * max(1, len(full_days_count(p))) for p in default), default=0)
+            rel = 2.0 / (n ** 0.5) if n > 0 else 0
+            return vals + [min(vals) * max(0.0, 1 - rel), max(vals) * (1 + rel)] if vals and rel else vals
+        out['class_share_pct'] = {c: fmt_range(share_values(c), share=True) for c in classes}
         out['class_per_day'] = {c: fmt_range(vals([p.get('class_per_day', {}).get(c) for p in default])) for c in classes}
         out['records_per_day'] = fmt_range([p['per_day_utc'][k] for p in default if p.get('per_day_utc')
                                             for k in ('min', 'max')])

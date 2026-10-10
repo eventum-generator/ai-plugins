@@ -577,7 +577,7 @@ def check_pair(args, rec, cfg_path, cfg, work, eventum, py, window, days, mode, 
     return rec
 
 
-def plan(args, has_chain):
+def plan(args, has_chain, default_interval=None):
     counts = dict(SETS[args.set])
     if args.off_runs:
         counts['off'] = args.off_runs
@@ -590,8 +590,8 @@ def plan(args, has_chain):
         for i in range(counts['on']):
             runs.append(('on-%d' % (i + 1), 'on', 'on', None, args.days))
         for h in args.short_interval:
-            if h:
-                runs.append(('short-%g' % h, 'short', 'on', h, args.days))
+            if h and h != default_interval:  # the default interval is covered by the on-runs
+                runs.append(('short-%g' % h, 'short', 'on', h, max(args.days, int(-(-4 * h // 24)))))
     for i in range(args.long_runs):
         runs.append(('long' if i == 0 else 'long-%d' % (i + 1), 'long', 'as-is', None, args.long_days))
     runs.append(('long-base', 'base', 'as-is', None, args.long_days))
@@ -646,7 +646,7 @@ def cmd_run(args):
     cfg = load_yaml(py, [gen / 'generator.yml'])[gen / 'generator.yml']
     params = ((cfg.get('event') or {}).get('template') or {}).get('params') or {}
     has_chain = 'anomaly_mode' in params
-    runs = plan(args, has_chain)
+    runs = plan(args, has_chain, params.get('anomaly_interval_hours'))
     started = time.time()
     slot.cancel_on_signals()
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(runs)) as pool:
@@ -667,6 +667,17 @@ def cmd_run(args):
     print(json.dumps({'manifest': str(out / 'manifest.json'), 'ok': manifest['ok'],
                       'problems': problems, 'wall_s': manifest['wall_s']}, indent=1))
     return 130 if slot.CANCEL.is_set() else (0 if manifest['ok'] else 1)
+
+
+def cmd_bound(args):
+    """A bounded copy of the generator for a finite batch window (the README recipe)."""
+    eventum = find_eventum(args.eventum)
+    py = eventum_python(eventum)
+    dst = Path(args.to).resolve()
+    _, _, notes = prepare(args.generator, dst, py, window_start(args.start), args.days, 'as-is', None,
+                          params=args.param)
+    print(json.dumps({'copy': str(dst), 'generator.yml': str(dst / 'generator.yml'), 'notes': notes}, indent=1))
+    return 0
 
 
 def cmd_one(args):
@@ -835,7 +846,7 @@ def main():
     r.add_argument('--long-days', type=int, default=7)
     r.add_argument('--off-runs', type=int, help='background runs (default: by --set)')
     r.add_argument('--on-runs', type=int, help='anomaly runs at the default interval (default: by --set)')
-    r.add_argument('--long-runs', type=int, default=1,
+    r.add_argument('--long-runs', type=int, default=2,
                    help='default-configuration runs; more give the README per-run ranges')
     r.add_argument('--check-days', type=int, default=2)
     r.add_argument('--short-interval', type=float, nargs='+', default=[],
@@ -851,6 +862,12 @@ def main():
                    help='REL=PATH: replace a file of the copy (a broken sample for a validation check)')
     o.add_argument('--expect-error', action='store_true',
                    help='succeed only on exactly one log line and no records (invalid input checks)')
+    bd = sub.add_parser('bound', help='a bounded copy for a finite batch window')
+    bd.add_argument('generator')
+    bd.add_argument('--to', required=True)
+    bd.add_argument('--start', default=WINDOW_START)
+    bd.add_argument('--days', type=float, default=1)
+    bd.add_argument('--param', action='append', default=[])
     lv = sub.add_parser('live', parents=[common], help='live-mode check')
     lv.add_argument('--seconds', type=float, default=90)
     lv.add_argument('--scale', type=float, help='rate multiplier (default: aims at about 80 records)')
@@ -863,7 +880,7 @@ def main():
             rep = doctor(args.eventum)
             print(json.dumps(rep, indent=1))
             return 0 if rep['ok'] else 1
-        return {'run': cmd_run, 'one': cmd_one, 'live': cmd_live}[args.cmd](args)
+        return {'run': cmd_run, 'one': cmd_one, 'live': cmd_live, 'bound': cmd_bound}[args.cmd](args)
     except CaptureError as exc:
         print(json.dumps({'ok': False, 'error': str(exc)}), file=sys.stderr)
         return 2
