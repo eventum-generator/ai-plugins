@@ -17,11 +17,12 @@ Opens one pull request per reviewed generator in `eventum-generator/content-pack
 ## content-packs
 
 - A generator is `generators/<slug>/`: `generator.yml`, `README.md`, `templates/`, and as needed `samples/`, `patterns/`, `scripts/`; nothing else, and nothing registered elsewhere. Eventum Studio installs it under the directory name, titled and summarised from the README's first heading and the paragraph under it, regular files only.
+- CI on every PR checks each changed generator: structure and README sections, the sample as one JSON object, a one-day batch run (`capture.py one`; every input needs an explicit `start`), a 20-second live run of the shipped configuration with an empty log, gitleaks, and warnings for public IPv4 literals. The catalog fit step makes it pass before pushing.
 - PR body: a lead paragraph (source and version, output shape, estate, records per day, curve); `## Modes` (`anomaly_mode: true` with the chain, actor and recurrence; `false` with background overlap); `## Validation` (numbers from `review-report.json`, the verdict with the reviewed digest, and the head digest when the README changed since); `## Limits`.
 
 ## Hub card
 
-Card PRs branch from and target `master` of `eventum-generator/docs` (other docs work goes to `develop`); the repository has no CI, so the local checks are the only gate.
+Card PRs branch from and target `master` of `eventum-generator/docs` (other docs work goes to `develop`). CI reruns prettier and eslint on changed files, the Hub card check (unique slug, file name, registration), `types:check` and the build; the same checks run locally before the push.
 
 - `lib/hub-data/generators/<slug>.ts` exports a `GeneratorMeta` constant named like its neighbours (`application-1c` is `applicationOneC`); `slug` equals the content-packs directory, which the page links to and runs in its quick start. It is imported in `lib/hub-data/index.ts` and appended to the array (array order is display order).
 - Fields and allowed values come from `lib/hub-types.ts` and `lib/hub-categories.ts` of the checkout. Hub categories differ from slug prefixes (`proxy-*` and `vpn-*` are web-access, `windows-*` endpoint, identity or network); `originalFormat` is omitted when the event has no native record; `generationModes` is `['background', 'anomaly']` with a chain and omitted without one.
