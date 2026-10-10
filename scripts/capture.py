@@ -676,7 +676,8 @@ def cmd_bound(args):
     dst = Path(args.to).resolve()
     _, _, notes = prepare(args.generator, dst, py, window_start(args.start), args.days, 'as-is', None,
                           params=args.param)
-    print(json.dumps({'copy': str(dst), 'generator.yml': str(dst / 'generator.yml'), 'notes': notes}, indent=1))
+    print(json.dumps({'copy': str(dst), 'generator.yml': str(dst / 'generator.yml'),
+                      'output': str(dst / 'output' / 'events.out'), 'notes': notes}, indent=1))
     return 0
 
 
