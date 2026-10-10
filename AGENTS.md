@@ -14,7 +14,7 @@ A skill lives in `skills/<name>/SKILL.md`, with `references/` (facts) next to it
 
 - Frontmatter has `name` and `description`. The description says when the skill applies, lists triggers in the words users say, and ends with "Not for ..." when a neighbouring task needs to be excluded. It decides whether the skill is invoked; it does not retell the process.
 - `SKILL.md` follows one outline: purpose, conditions to start, pointer to references, process, form of the result, rules. Section names fit the skill.
-- `SKILL.md` holds judgement, order and rules; `references/` hold facts (APIs, formats, commands). References do not overlap each other or `SKILL.md`. Knowledge ships inside the skill, not as links to external pages.
+- `SKILL.md` holds judgement, order and rules; `references/` hold facts (APIs, formats, commands). A reference is a separate file only when it is read conditionally (a chain, a large API) or by several skills; what one skill reads on every run belongs in its `SKILL.md`. References do not overlap each other or `SKILL.md`. Knowledge ships inside the skill, not as links to external pages.
 - Skills are for any Eventum user: no assumptions about a particular repository layout, organisation or internal service. A skill states which files and systems it changes and which it only reads.
 - The text is a distillate: facts, decisions, conditions. Each sentence carries knowledge the others do not. Formal, complete sentences; no filler, repetition or explanation of the obvious. Distillation removes words, not caveats.
 
