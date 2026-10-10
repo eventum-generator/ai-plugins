@@ -233,12 +233,14 @@ class ParseProfileTest(unittest.TestCase):
 
 class ReadmeRangeTest(unittest.TestCase):
     def test_rounding_rule(self):
-        self.assertEqual(measure.fmt_range([7.81, 7.89], share=True), '7.8-7.9')
-        self.assertEqual(measure.fmt_range([32, 100]), '24-130')       # margin, never zero
-        self.assertEqual(measure.fmt_range([3.28, 7.38], share=True), '2.7-9')
-        self.assertEqual(measure.fmt_range([1093, 1161]), '1080-1180')
+        many = lambda lo, hi: [lo, hi, (lo + hi) / 2, lo, hi, (lo + hi) / 2]  # noqa: E731
+        self.assertEqual(measure.fmt_range(many(7.81, 7.89), share=True), '7.8-7.9')  # stable stays tight
+        self.assertEqual(measure.fmt_range(many(32, 100)), '24-130')                 # margin, never zero
+        self.assertEqual(measure.fmt_range(many(3.28, 7.38), share=True), '2.7-9')
+        self.assertEqual(measure.fmt_range(many(1093, 1161)), '1080-1180')
         self.assertEqual(measure.fmt_range([0, 7, 3, 5]), '0-8.8')
-        # three medians, one per report: wider room than many daily values
+        # few observations (a median per report) get more room
+        self.assertEqual(measure.fmt_range([32, 100]), '18-180')
         self.assertEqual(measure.fmt_range([15.2, 17.1, 18.7]), '14-20')
         self.assertEqual(measure.fmt_range([5, 5]), '4.5-5.5')
 
