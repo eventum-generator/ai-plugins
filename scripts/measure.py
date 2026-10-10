@@ -1113,7 +1113,7 @@ def readme_numbers(reports):
             vals = [v for p in default for v in p.get('class_share_pct_per_capture', {}).get(c, [])]
             # counting noise of a rare class: widen by two Poisson deviations of its records per run
             n = min((p.get('class_per_day', {}).get(c, 0) * max(1, len(full_days_count(p))) for p in default), default=0)
-            rel = 2.0 / (n ** 0.5) if n > 0 else 0
+            rel = 2.0 / (n ** 0.5) if 0 < n < 50 else 0  # only rare classes carry counting noise
             return vals + [min(vals) * max(0.0, 1 - rel), max(vals) * (1 + rel)] if vals and rel else vals
         out['class_share_pct'] = {c: fmt_range(share_values(c), share=True) for c in classes}
         out['class_per_day'] = {c: fmt_range(vals([p.get('class_per_day', {}).get(c) for p in default])) for c in classes}
