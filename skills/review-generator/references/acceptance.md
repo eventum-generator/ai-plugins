@@ -40,7 +40,7 @@ Every generator:
 
 | # | Criterion | Failure |
 |---|---|---|
-| 19 | The generator is as simple as its data allows: inputs, pattern files, templates and state could not be markedly fewer or plainer for the same data; a missing Eventum capability is not worked around with piles of files or intricate logic but disclosed as a limitation. | MEDIUM |
+| 19 | The generator is as simple as its data allows: inputs, pattern files, templates and state could not be markedly fewer or plainer for the same data; a missing Eventum capability is not worked around with piles of files or intricate logic but disclosed as a limitation. Simplicity bought by losing the source's daily or weekly rhythm or the realistic order and delays of an action's records fails criteria 4 and 5 instead. | MEDIUM |
 
 ## Captures
 
