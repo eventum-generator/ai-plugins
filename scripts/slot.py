@@ -326,7 +326,7 @@ def run(cmd, mem_mb=0, pools=(), timeout=None, wait=None, cwd=None,
         limit = mem_mb * 1.5 if mem_mb else None
         while proc.poll() is None:
             try:
-                proc.wait(0.5)
+                proc.wait(0.2)  # a 4-second run still gives a memory series
             except subprocess.TimeoutExpired:
                 pass
             if proc.poll() is not None:

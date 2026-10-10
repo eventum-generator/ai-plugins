@@ -548,7 +548,9 @@ def drift(results):
                 na = sum(r['class_days'].get(d, {}).get(c, 0) for d in first)
                 nb = sum(r['class_days'].get(d, {}).get(c, 0) for d in second)
                 a, b = na / len(first), nb / len(second)
-                if na + nb >= 20 and max(a, b) > 2.5 * max(min(a, b), 0.1):
+                # a real shift, not counting noise: 2.5x apart and 4 Poisson deviations
+                z = abs(a - b) / ((na / len(first) ** 2 + nb / len(second) ** 2) ** 0.5 or 1)
+                if na + nb >= 20 and max(a, b) > 2.5 * max(min(a, b), 0.1) and z > 4:
                     out[c] = {'first_half_per_day': round(a, 2), 'second_half_per_day': round(b, 2),
                               'days': kind, 'capture': r['path']}
     return out
