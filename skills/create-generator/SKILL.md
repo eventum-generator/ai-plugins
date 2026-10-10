@@ -1,6 +1,6 @@
 ---
 name: create-generator
-description: Use to build or redesign an Eventum generator once the source format is known - from a research-source brief or from the user's own format, sample records or log to imitate - "build the generator from the brief", "here are sample lines, make a generator", "add an anomaly scenario to this generator", "fix the review findings". Not for finding out a source's format (research-source) or for accepting a finished generator (review-generator).
+description: Use to build, change or fix an Eventum generator once the source format is known (a research-source brief, or the user's format, samples or log) - "make a generator from these lines", "add an anomaly scenario", "fix the review findings". Not for researching a format (research-source) or accepting a generator (review-generator).
 ---
 
 # Create an Eventum generator

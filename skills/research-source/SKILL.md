@@ -1,6 +1,6 @@
 ---
 name: research-source
-description: Use when the user wants an Eventum generator or synthetic logs for a named product or log source and there is no format specification or sample records at hand - "research FortiGate traffic logs", "what does Keycloak log for admin events", "find the native format of Cisco ASA syslog". Not for users who already provide their own format or samples - that goes straight to create-generator.
+description: Use when the user wants an Eventum generator or synthetic logs for a named product and has no format specification or sample records - "research FortiGate traffic logs", "what does Keycloak log for admin events". Not when the user provides a format or samples (create-generator).
 ---
 
 # Research a log source

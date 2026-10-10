@@ -1,6 +1,6 @@
 ---
 name: review-generator
-description: Use to accept or check an Eventum generator - "review this generator", "is this pack ready", "check the generator after the fixes", "review the content-pack PR". Not for building or fixing a generator (create-generator).
+description: Use to accept or check an Eventum generator - "review this generator", "is it ready", "review the content-pack PR". Not for building or fixing one (create-generator).
 ---
 
 # Review an Eventum generator

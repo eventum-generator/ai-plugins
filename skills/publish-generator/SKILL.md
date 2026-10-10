@@ -1,6 +1,6 @@
 ---
 name: publish-generator
-description: Use only when the user asks to share or submit an Eventum generator to the official catalog or the Eventum Hub - "publish this generator", "submit it to content-packs", "add the Hub card", "open the PRs for these packs". Not for building or reviewing a generator.
+description: Use only when the user asks to submit an Eventum generator to the official catalog (content-packs) or the Eventum Hub - "publish this generator", "open the PRs for these packs". Not for building or reviewing a generator.
 ---
 
 # Publish a generator

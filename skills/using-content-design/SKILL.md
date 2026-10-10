@@ -1,6 +1,6 @@
 ---
 name: using-content-design
-description: Use at the start of any task about Eventum content - building a log generator, synthetic security or infrastructure logs, anomaly or attack scenarios for detection testing, reviewing a generator, Eventum content packs or the Eventum Hub.
+description: Use at the start of any Eventum content task: log generators, synthetic security or infrastructure logs, attack scenarios for detection testing, reviewing or publishing generators.
 ---
 
 # Using content design
