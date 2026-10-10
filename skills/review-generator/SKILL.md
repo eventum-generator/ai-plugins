@@ -38,7 +38,7 @@ A review is one capture set, one live check, the report and a targeted reading; 
 
 ## Result
 
-- CLEAR: the author regenerates the README figures from `report.json` and `review-report.json` together (`measure.py readme`, then `check-readme` against both), fixes the other LOW findings or describes them in the README, and the generator can be published (`publish-generator`); fixes limited to the README do not need a new review.
+- CLEAR: the author regenerates the README figures from `report.json` and `review-report.json` together (`measure.py readme <reports> --apply <README>`, then `check-readme` against both), fixes the other LOW findings or describes them in the README, and the generator can be published (`publish-generator`); fixes limited to the README do not need a new review.
 - NOT CLEAR: the author fixes the generator (`create-generator`), and a new review runs on the new files.
 
 ## Rules

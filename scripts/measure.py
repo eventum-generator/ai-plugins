@@ -1242,6 +1242,47 @@ def _raw(reports):
     return vals
 
 
+def apply_readme(readme, reports):
+    """Write the generated ranges into a README: the share cell of every Event Types
+    row whose class the reports know, and the `| Figure | Range |` table. Returns
+    what changed."""
+    nums = readme_numbers(reports)
+    shares = nums.get('class_share_pct') or {}
+    table = readme_table(reports).rstrip('\n').split('\n')
+    with open(readme, encoding='utf-8') as fh:
+        lines = fh.read().split('\n')
+    out, changed, i = [], [], 0
+    while i < len(lines):
+        line = lines[i]
+        if line.strip().startswith('| Figure | Range |'):
+            j = i
+            while j < len(lines) and lines[j].strip().startswith('|'):
+                j += 1
+            out.extend(table)
+            changed.append('figure table')
+            i = j
+            continue
+        if line.startswith('|'):
+            cells = line.split('|')
+            names = [c.strip().strip('`') for c in cells]
+            name = next((n for n in names if n in shares and shares[n]), None)
+            if name:
+                for k, c in enumerate(cells):
+                    m = re.search(r'[\d.]+\s*(?:-|–)\s*[\d.]+\s*%|[\d.]+\s*%', c)
+                    if m and k != names.index(name):
+                        new = c[:m.start()] + shares[name] + '%' + c[m.end():]
+                        if new != c:
+                            cells[k] = new
+                            changed.append(name)
+                        break
+                line = '|'.join(cells)
+        out.append(line)
+        i += 1
+    with open(readme, 'w', encoding='utf-8') as fh:
+        fh.write('\n'.join(out))
+    return changed
+
+
 def check_readme(readme, reports):
     """README table rows (event types and the generated figure table) whose range
     misses a measured value of the given reports."""
@@ -1298,6 +1339,7 @@ def main():
     rd = sub.add_parser('readme', help='every README figure as a range, from report files')
     rd.add_argument('reports', nargs='+')
     rd.add_argument('--markdown', action='store_true', help='the figure table for the README')
+    rd.add_argument('--apply', metavar='README', help='write the ranges into this README in place')
     ck = sub.add_parser('check-readme', help='README event-type shares against report files')
     ck.add_argument('readme')
     ck.add_argument('reports', nargs='+')
@@ -1354,6 +1396,9 @@ def main():
             with open(path, encoding='utf-8') as fh:
                 reps.append(json.load(fh))
         if args.cmd == 'readme':
+            if args.apply:
+                emit({'changed': apply_readme(args.apply, reps)})
+                return 0
             if args.markdown:
                 sys.stdout.write(readme_table(reps))
             else:
