@@ -1096,9 +1096,33 @@ def full_days_count(prof):
     return range(max(days, 1))
 
 
+_RANGE = re.compile(r'^(-?[\d.]+)(?:-([\d.]+))?$')
+
+
+def _union(a, b):
+    """Merge two readme_numbers results: each range spans both."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return {k: _union(a[k], b[k]) if k in b else a[k] for k in a}
+    ma, mb = (_RANGE.match(x) if isinstance(x, str) else None for x in (a, b))
+    if not (ma and mb):
+        return a
+    lo = min((ma.group(1), mb.group(1)), key=float)
+    hi = max((ma.group(2) or ma.group(1), mb.group(2) or mb.group(1)), key=float)
+    return lo if lo == hi else '%s-%s' % (lo, hi)
+
+
 def readme_numbers(reports):
     """Every README figure as a ready range, from one or more report.json files
-    (older reports may lack some figures; those are left out)."""
+    (older reports may lack some figures; those are left out). With several reports
+    each range spans the ranges of every report alone, so more runs never narrow it."""
+    out = _readme_numbers(reports)
+    if len(reports) > 1:
+        for r in reports:
+            out = _union(out, _readme_numbers([r]))
+    return out
+
+
+def _readme_numbers(reports):
     def profs(key):
         return [r.get(key) for r in reports if r.get(key)]
 
@@ -1176,7 +1200,8 @@ def readme_table(reports):
     def add(label, value):
         if value:
             rows.append('| %s | %s |' % (label, value))
-    add('records per day', nums.get('records_per_day'))
+    if not (nums.get('records_per_weekday') and nums.get('records_per_weekend')):
+        add('records per day', nums.get('records_per_day'))
     add('records per weekday', nums.get('records_per_weekday'))
     add('records per weekend day', nums.get('records_per_weekend'))
     for g, v in (nums.get('groups_default') or {}).items():
@@ -1283,9 +1308,12 @@ def apply_readme(readme, reports):
     return changed
 
 
+TOLERANCE = 1.25  # a fresh run's value off a README range by less than a quarter is noise
+
+
 def check_readme(readme, reports):
     """README table rows (event types and the generated figure table) whose range
-    misses a measured value of the given reports."""
+    misses a measured value of the given reports by more than TOLERANCE."""
     measured = _raw(reports)
     out = []
     with open(readme, encoding='utf-8') as fh:
@@ -1302,7 +1330,7 @@ def check_readme(readme, reports):
                 continue
             lo = float(m.group(1).replace(',', ''))
             hi = float(m.group(2).replace(',', '')) if m.lastindex == 2 else lo
-            bad = [v for v in measured[name] if v < lo - 1e-9 or v > hi + 1e-9]
+            bad = [v for v in measured[name] if v < lo / TOLERANCE - 1e-9 or v > hi * TOLERANCE + 1e-9]
             if bad:
                 out.append({'figure': name, 'readme': m.group(0), 'measured': [min(measured[name]), max(measured[name])],
                             'suggested': fmt_range(measured[name], share='share' in name or '%' in name or

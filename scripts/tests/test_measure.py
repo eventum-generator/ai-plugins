@@ -244,6 +244,24 @@ class ReadmeRangeTest(unittest.TestCase):
         self.assertEqual(measure.fmt_range([15.2, 17.1, 18.7]), '14-20')
         self.assertEqual(measure.fmt_range([5, 5]), '4.5-5.5')
 
+    def test_more_reports_never_narrow_a_range(self):
+        flat = [100 / 24] * 24
+        one = {'11_profile_default': {'per_day_utc': {'min': 100, 'max': 140}, 'hourly_pct_utc': flat}}
+        two = {'11_profile_default': {'per_day_utc': {'min': 110, 'max': 120}, 'hourly_pct_utc': flat}}
+        a, b = (measure.readme_numbers([r])['records_per_day'] for r in (one, two))
+        both = measure.readme_numbers([one, two])['records_per_day']
+        lo, hi = (float(x) for x in both.split('-'))
+        for r in (a, b):
+            r_lo, r_hi = (float(x) for x in r.split('-'))
+            self.assertTrue(lo <= r_lo and hi >= r_hi, (both, r))
+
+    def test_check_readme_tolerates_small_misses(self):
+        rep = {'11_profile_default': {'per_day_utc': {'min': 1000, 'max': 1300}}}
+        readme = Path(tempfile.mkdtemp()) / 'README.md'
+        for text, bad in (('| records per day | 1100-1200 |', 0), ('| records per day | 1300-1500 |', 1)):
+            readme.write_text('| Figure | Range |\n|---|---|\n' + text + '\n')
+            self.assertEqual(len(measure.check_readme(str(readme), [rep])), bad, text)
+
 
 class DiffTest(unittest.TestCase):
     def test_diff_shows_changed_lines(self):
