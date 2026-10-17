@@ -5,7 +5,7 @@ What a generator can use, verified against the source of Eventum 2.8.0 (package 
 ## generator.yml
 
 ```yaml
-input:                      # non-empty list of one-key maps; inputs are merged in time order
+input:                      # non-empty list of one-key maps; inputs are merged in time order (*next release*: except `http`, each published on request on its own)
   - time_patterns:
       tags: [office]        # optional on every input; reaches templates as `tags`
       patterns: [patterns/office.yml]
